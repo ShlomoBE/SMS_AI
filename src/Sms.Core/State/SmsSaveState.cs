@@ -280,7 +280,7 @@ public sealed class SmsSaveState
         var fm = system.AudioMixer.Fm;
         state.FmLatchedAddress = fm.LatchedAddress;
         state.FmAudioControl = fm.AudioControl;
-        state.FmRegisters = (byte[])((byte[]?)FmRegistersField?.GetValue(fm))?.Clone() ?? new byte[256];
+        state.FmRegisters = FmRegistersField?.GetValue(fm) is byte[] fmRegs ? (byte[])fmRegs.Clone() : new byte[256];
         state.FmCustomPatch = fm.GetCustomPatchRegisters();
         state.FmRhythmControl = fm.ReadRegister(0x0E);
         for (int i = 0; i < 9; i++)
