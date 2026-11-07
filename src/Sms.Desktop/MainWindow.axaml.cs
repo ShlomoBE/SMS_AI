@@ -22,7 +22,7 @@ namespace Sms.Desktop;
 
 public partial class MainWindow : Window
 {
-    public const string AppVersion = "v1.8.0";
+    public const string AppVersion = "v1.9.0";
 
     [DllImport("winmm.dll")]
     private static extern int timeBeginPeriod(uint uPeriod);
@@ -611,10 +611,14 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(savesDir);
             var folder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(new Uri(savesDir));
 
+            string gameName = _loadedRomPath != null ? Path.GetFileNameWithoutExtension(_loadedRomPath) : "SMS";
+            string defaultName = $"{gameName}_{DateTime.Now:yyyyMMdd_HHmm}.state";
+
             var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save Emulator State",
                 SuggestedStartLocation = folder,
+                SuggestedFileName = defaultName,
                 DefaultExtension = "state",
                 FileTypeChoices = new[]
                 {
