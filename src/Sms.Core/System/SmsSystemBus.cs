@@ -150,7 +150,11 @@ public sealed class SmsSystemBus : IZ80Bus
         byte p = (byte)(port & 0xFF);
 
         // YM2413 FM Port overrides
-        if (p == 0xF2) return AudioMixer.Fm.AudioControl;
+        // Force PSG is a host compatibility override, not a universal model of
+        // absent FM hardware. Export SMS without FM reports low bits 10; this
+        // makes software's boot-time FM detection select its PSG driver.
+        // https://www.smspower.org/Development/AudioControlPort
+        if (p == 0xF2) return AudioMixer.Mode == SmsAudioMode.ForcePsg ? (byte)0x02 : AudioMixer.Fm.AudioControl;
         if (p is 0xF0 or 0xF1) return 0xFF;
 
         // Charles MacDonald, IDocs/General.txt §4 (I/O Port Map)

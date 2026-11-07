@@ -134,7 +134,13 @@ public sealed class SmsSystem
         Bus.Vdp = VdpPorts.CreateDeterministicFixture(
             new byte[0x4000], new byte[32], new byte[11], 0, 0, false, 0, 0, false);
         Bus.Controllers = new SegaControllerPorts();
-        Bus.AudioMixer = new SmsAudioMixer();
+        var oldMixer = Bus.AudioMixer;
+        Bus.AudioMixer = new SmsAudioMixer
+        {
+            Mode = oldMixer.Mode,
+            PsgGain = oldMixer.PsgGain,
+            FmGain = oldMixer.FmGain
+        };
 
         Scheduler = new MasterScheduler();
 

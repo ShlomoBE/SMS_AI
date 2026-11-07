@@ -9,6 +9,31 @@ namespace Sms.Core.Tests.Audio;
 public sealed class SmsAudioMixerTests
 {
     [Fact]
+    public void SeparateOutputGainsScalePsgAndFmIndependently()
+    {
+        static float[] Render(float psgGain, float fmGain)
+        {
+            var mixer = new SmsAudioMixer { PsgGain = psgGain, FmGain = fmGain };
+            mixer.WritePortF2(1);
+            mixer.WritePort7F(0x8A); mixer.WritePort7F(0); mixer.WritePort7F(0x90);
+            mixer.WritePortF0(0x30); mixer.WritePortF1(0x10);
+            mixer.WritePortF0(0x10); mixer.WritePortF1(0xAC);
+            mixer.WritePortF0(0x20); mixer.WritePortF1(0x19);
+            var result = new float[1024];
+            mixer.GeneratePcmSamples(result, result.Length, 44100, 249344);
+            return result;
+        }
+
+        var psg = Render(1, 0);
+        var fm = Render(0, 1);
+        var combined = Render(1, 2);
+        Assert.Contains(psg, sample => sample != 0);
+        Assert.Contains(fm, sample => sample != 0);
+        for (int i = 0; i < combined.Length; i++)
+            Assert.Equal(Math.Clamp(psg[i] + 2 * fm[i], -1f, 1f), combined[i], 5);
+    }
+
+    [Fact]
     public void DefaultConstructorInitializesSubEnginesAndAutoMode()
     {
         var mixer = new SmsAudioMixer();

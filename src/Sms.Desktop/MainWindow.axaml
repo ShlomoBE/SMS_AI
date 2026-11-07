@@ -1,20 +1,22 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Sms.Desktop.MainWindow"
-        Title="Sega Master System Emulator v1.6.0"
+        Title="Sega Master System Emulator v1.7.0"
         Width="800" Height="600"
         MinWidth="320" MinHeight="240"
         WindowStartupLocation="CenterScreen"
+        Icon="avares://Sms.Desktop/Assets/App.ico"
         Focusable="True"
         DragDrop.AllowDrop="True">
 
     <DockPanel LastChildFill="True">
 
         <!-- Top Menu Bar -->
-        <Menu DockPanel.Dock="Top" Background="#1E1E1E" Focusable="False" KeyboardNavigation.IsTabStop="False">
+        <Menu DockPanel.Dock="Top" Background="#1E1E1E">
             <MenuItem Header="_File">
                 <MenuItem Header="Open _ROM..." Click="OnFileOpenRom_Click" InputGesture="Ctrl+O" />
                 <MenuItem Header="Open _BIOS..." Click="OnFileOpenBios_Click" />
+                <MenuItem Header="_Settings..." Click="OnSettings_Click" />
                 <Separator />
                 <MenuItem Header="E_xit" Click="OnFileExit_Click" />
             </MenuItem>
@@ -46,10 +48,11 @@
 
         <!-- Bottom Status Bar -->
         <Border DockPanel.Dock="Bottom" Background="#181818" BorderBrush="#333333" BorderThickness="0,1,0,0" Padding="8,4">
-            <Grid ColumnDefinitions="*, Auto, Auto">
+            <Grid ColumnDefinitions="*, Auto, Auto, Auto">
                 <TextBlock x:Name="StatusText" Grid.Column="0" Text="No ROM Loaded — Drop a .sms file to play" Foreground="#CCCCCC" VerticalAlignment="Center" FontSize="12" />
                 <TextBlock x:Name="RomInfoText" Grid.Column="1" Text="" Foreground="#888888" Margin="16,0" VerticalAlignment="Center" FontSize="12" />
-                <TextBlock x:Name="FpsText" Grid.Column="2" Text="0.0 FPS" Foreground="#4CAF50" VerticalAlignment="Center" FontSize="12" FontFamily="Consolas, monospace" FontWeight="Bold" />
+                <TextBlock x:Name="SoundRoutingText" Grid.Column="2" Text="Mixer: —" ToolTip.Tip="Enabled mixer routing, not detected game sound or audible volume" Foreground="#888888" Margin="0,0,16,0" VerticalAlignment="Center" FontSize="12" />
+                <TextBlock x:Name="FpsText" Grid.Column="3" Text="0.0 FPS" Foreground="#4CAF50" VerticalAlignment="Center" FontSize="12" FontFamily="Consolas, monospace" FontWeight="Bold" />
             </Grid>
         </Border>
 
@@ -59,7 +62,8 @@
 
             <!-- Drag & Drop overlay label when empty -->
             <StackPanel x:Name="DropPrompt" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-                <TextBlock Text="🎮 Sega Master System v1.6.0" FontSize="24" FontWeight="Bold" Foreground="#666666" HorizontalAlignment="Center" />
+                <Image Source="avares://Sms.Desktop/Assets/Logo.png" MaxWidth="300" MaxHeight="180" Stretch="Uniform" />
+                <TextBlock Text="🎮 Sega Master System v1.7.0" FontSize="24" FontWeight="Bold" Foreground="#666666" HorizontalAlignment="Center" />
                 <TextBlock Text="Drag and drop a .sms or .bin ROM file here" FontSize="14" Foreground="#444444" HorizontalAlignment="Center" />
                 <TextBlock Text="Or click File -> Open ROM..." FontSize="12" Foreground="#333333" HorizontalAlignment="Center" />
             </StackPanel>

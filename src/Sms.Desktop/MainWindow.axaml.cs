@@ -22,7 +22,7 @@ namespace Sms.Desktop;
 
 public partial class MainWindow : Window
 {
-    public const string AppVersion = "v1.6.0";
+    public const string AppVersion = "v1.7.0";
 
     [DllImport("winmm.dll")]
     private static extern int timeBeginPeriod(uint uPeriod);
@@ -37,6 +37,12 @@ public partial class MainWindow : Window
     private float[] _audioBuffer = new float[735];
     private bool _isPaused;
     private string? _loadedRomPath;
+    private byte[]? _biosBytes;
+    private DesktopSettings _settings = new();
+    private int? _previewPsgVolume;
+    private int? _previewFmVolume;
+    private VideoStandard _currentVideo = VideoStandard.Ntsc;
+    private SmsAudioMode _currentAudio = SmsAudioMode.Auto;
 
     private CancellationTokenSource? _emuCts;
     private Task? _emuTask;
@@ -45,10 +51,18 @@ public partial class MainWindow : Window
     private readonly Stopwatch _fpsStopwatch = new();
     private int _frameCount;
     private double _fps;
+    private readonly DispatcherTimer _soundRoutingTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
 
     public MainWindow()
     {
         InitializeComponent();
+        _soundRoutingTimer.Tick += (_, _) => UpdateSoundRouting();
+        _soundRoutingTimer.Start();
+        _settings = DesktopSettings.Load(out var settingsError);
+        _currentVideo = _settings.VideoStandard;
+        _currentAudio = _settings.AudioMode;
+        UpdateModeMenus();
+        if (settingsError != null) Opened += (_, _) => ShowErrorDialog("Settings", settingsError);
         Title = $"Sega Master System Emulator {AppVersion}";
 
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -56,7 +70,14 @@ public partial class MainWindow : Window
 
         KeyDown += OnKeyDown;
         KeyUp += OnKeyUp;
-        PointerPressed += (_, _) => Focus();
+        Deactivated += (_, _) =>
+        {
+            lock (_emuLock)
+            {
+                _sms?.SetButtonState(1, SmsButtons.Up | SmsButtons.Down | SmsButtons.Left | SmsButtons.Right | SmsButtons.Button1 | SmsButtons.Button2, false);
+                _sms?.SetPauseState(false);
+            }
+        };
 
         _audioPlayer = new AudioPlayer();
         InitializeBitmap();
@@ -74,6 +95,29 @@ public partial class MainWindow : Window
             AlphaFormat.Opaque);
 
         DisplayImage.Source = _bitmap;
+    }
+
+    // Poll on the UI thread rather than queueing another update for every frame.
+    private void UpdateSoundRouting()
+    {
+        string routing;
+        lock (_emuLock)
+        {
+            if (_sms == null)
+                routing = "—";
+            else
+            {
+                var mixer = _sms.AudioMixer;
+                routing = (mixer.IsPsgEnabled, mixer.IsFmEnabled) switch
+                {
+                    (true, true) => "PSG + FM",
+                    (true, false) => "PSG",
+                    (false, true) => "FM",
+                    _ => "muted"
+                };
+            }
+        }
+        SoundRoutingText.Text = $"Mixer: {routing}";
     }
 
     private void ShowToastNotification(string message, string icon = "ℹ️")
@@ -145,6 +189,10 @@ public partial class MainWindow : Window
                             {
                                 _audioBuffer = new float[requiredSamples];
                             }
+
+                            // Host gains are reapplied after reset or state load replaces the mixer.
+                            sms.AudioMixer.PsgGain = (_previewPsgVolume ?? _settings.PsgVolumePercent) / 100f;
+                            sms.AudioMixer.FmGain = (_previewFmVolume ?? _settings.FmVolumePercent) / 100f;
 
                             // Step 1 SMS frame
                             sms.StepFrame(_audioBuffer, 44100);
@@ -245,11 +293,18 @@ public partial class MainWindow : Window
 
             lock (_emuLock)
             {
-                _sms = new SmsSystem(romBytes, SegaMapperProfile.Sega3155235Sram8KiB);
+                var machine = new SmsSystem(romBytes, SegaMapperProfile.Sega3155235Sram8KiB,
+                    bios: _biosBytes, videoStandard: _settings.VideoStandard, audioMode: _settings.AudioMode);
+                // SmsSystem.Reset currently recreates the mixer, including during construction.
+                machine.AudioMode = _settings.AudioMode;
+                _sms = machine;
+                _currentVideo = _settings.VideoStandard;
+                _currentAudio = _settings.AudioMode;
                 _loadedRomPath = filePath;
                 _isPaused = false;
             }
 
+            UpdateModeMenus();
             DropPrompt.IsVisible = false;
             StatusText.Text = $"Playing: {Path.GetFileName(filePath)}";
             RomInfoText.Text = $"{romBytes.Length / 1024} KB ROM";
@@ -277,7 +332,9 @@ public partial class MainWindow : Window
                         bios: biosBytes,
                         videoStandard: _sms.VideoStandard,
                         audioMode: _sms.AudioMode);
+                    _sms.AudioMode = _currentAudio;
                 }
+                _biosBytes = biosBytes;
             }
             StatusText.Text = $"Loaded BIOS: {Path.GetFileName(filePath)}";
             ShowToastNotification($"Loaded BIOS {Path.GetFileName(filePath)}", "💾");
@@ -396,6 +453,7 @@ public partial class MainWindow : Window
         lock (_emuLock)
         {
             _sms?.Reset();
+            if (_sms != null) _sms.AudioMode = _currentAudio;
         }
         StatusText.Text = "System Reset";
         ShowToastNotification("System Reset", "🔄");
@@ -436,9 +494,18 @@ public partial class MainWindow : Window
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel == null) return;
 
+        try
+        {
+        var folderPath = _settings.ResolvedRomFolder;
+        var folder = Directory.Exists(folderPath)
+            ? await topLevel.StorageProvider.TryGetFolderFromPathAsync(new Uri(folderPath))
+            : null;
+        if (folder == null && _settings.RomFolder != "Roms")
+            ShowToastNotification("ROM folder unavailable; choose another folder", "⚠️");
         var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Open Sega Master System ROM",
+            SuggestedStartLocation = folder,
             AllowMultiple = false,
             FileTypeFilter = new[]
             {
@@ -451,6 +518,8 @@ public partial class MainWindow : Window
         {
             LoadRomFile(files[0].Path.LocalPath);
         }
+        }
+        catch (Exception ex) { ShowErrorDialog("Open ROM", ex.Message); }
     }
 
     private async void OnFileOpenBios_Click(object? sender, RoutedEventArgs e)
@@ -514,6 +583,9 @@ public partial class MainWindow : Window
                     return;
                 }
                 Sms.Core.State.SmsStateSerializer.LoadStateFromFile(_sms, savePath);
+                _currentVideo = _sms.VideoStandard;
+                _currentAudio = _sms.AudioMode;
+                UpdateModeMenus();
                 StatusText.Text = "Quick State Loaded (F8)";
                 ShowToastNotification("Quick State Loaded (F8)", "📂");
             }
@@ -581,7 +653,10 @@ public partial class MainWindow : Window
                 lock (_emuLock)
                 {
                     Sms.Core.State.SmsStateSerializer.LoadStateFromFile(_sms, files[0].Path.LocalPath);
+                    _currentVideo = _sms.VideoStandard;
+                    _currentAudio = _sms.AudioMode;
                 }
+                UpdateModeMenus();
                 StatusText.Text = $"State loaded from: {files[0].Name}";
                 ShowToastNotification($"Loaded {files[0].Name}", "📂");
             }
@@ -608,78 +683,7 @@ public partial class MainWindow : Window
 
     private void OnEmulationReset_Click(object? sender, RoutedEventArgs e) => ResetEmulation();
 
-    private void OnVideoNtsc_Click(object? sender, RoutedEventArgs e)
-    {
-        MenuVideoNtsc.IsChecked = true;
-        MenuVideoPal.IsChecked = false;
-
-        lock (_emuLock)
-        {
-            if (_sms != null)
-            {
-                _sms.VideoStandard = VideoStandard.Ntsc;
-                _sms.Reset();
-            }
-        }
-        StatusText.Text = "Video standard switched to NTSC (60 Hz)";
-        ShowToastNotification("Switched to NTSC (60 Hz)", "📺");
-    }
-
-    private void OnVideoPal_Click(object? sender, RoutedEventArgs e)
-    {
-        MenuVideoNtsc.IsChecked = false;
-        MenuVideoPal.IsChecked = true;
-
-        lock (_emuLock)
-        {
-            if (_sms != null)
-            {
-                _sms.VideoStandard = VideoStandard.Pal;
-                _sms.Reset();
-            }
-        }
-        StatusText.Text = "Video standard switched to PAL (50 Hz)";
-        ShowToastNotification("Switched to PAL (50 Hz)", "📺");
-    }
-
-    private void OnAudioAuto_Click(object? sender, RoutedEventArgs e)
-    {
-        SetAudioMode(SmsAudioMode.Auto);
-        MenuAudioAuto.IsChecked = true;
-        MenuAudioForcePsg.IsChecked = false;
-        MenuAudioForceFm.IsChecked = false;
-    }
-
-    private void OnAudioForcePsg_Click(object? sender, RoutedEventArgs e)
-    {
-        SetAudioMode(SmsAudioMode.ForcePsg);
-        MenuAudioAuto.IsChecked = false;
-        MenuAudioForcePsg.IsChecked = true;
-        MenuAudioForceFm.IsChecked = false;
-    }
-
-    private void OnAudioForceFm_Click(object? sender, RoutedEventArgs e)
-    {
-        SetAudioMode(SmsAudioMode.ForceFm);
-        MenuAudioAuto.IsChecked = false;
-        MenuAudioForcePsg.IsChecked = false;
-        MenuAudioForceFm.IsChecked = true;
-    }
-
-    private void SetAudioMode(SmsAudioMode mode)
-    {
-        lock (_emuLock)
-        {
-            if (_sms != null)
-            {
-                _sms.AudioMode = mode;
-            }
-        }
-        StatusText.Text = $"Audio mode set to: {mode}";
-        ShowToastNotification($"Audio Mode: {mode}", "🔊");
-    }
-
-    private void ShowErrorDialog(string title, string message)
+    private void ShowErrorDialog(string title, string message, Window? owner = null)
     {
         var dialog = new Window
         {
@@ -700,7 +704,7 @@ public partial class MainWindow : Window
             }
         };
 
-        dialog.ShowDialog(this);
+        dialog.ShowDialog(owner ?? this);
     }
 
     private void OnHelpControls_Click(object? sender, RoutedEventArgs e)
@@ -737,6 +741,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _soundRoutingTimer.Stop();
         _emuCts?.Cancel();
         _toastCts?.Cancel();
         _audioPlayer?.Dispose();

@@ -8,6 +8,23 @@ namespace Sms.Core.Tests.System;
 
 public class SmsSystemTests
 {
+    [Fact]
+    public void ForcePsgFailsFmDetectionAndSurvivesReset()
+    {
+        var sys = new SmsSystem(CreateDummyRom(), audioMode: SmsAudioMode.ForcePsg);
+        Assert.Equal(SmsAudioMode.ForcePsg, sys.AudioMode);
+        sys.Reset();
+        Assert.Equal(SmsAudioMode.ForcePsg, sys.AudioMode);
+        foreach (byte probe in new byte[] { 1, 0, 1, 0, 1, 0, 1 })
+        {
+            sys.Bus.WriteIo(0xF2, probe);
+            Assert.NotEqual(probe, sys.Bus.ReadIo(0xF2) & 7);
+        }
+        sys.AudioMode = SmsAudioMode.Auto;
+        sys.Bus.WriteIo(0xF2, 1);
+        Assert.Equal(1, sys.Bus.ReadIo(0xF2) & 7);
+    }
+
     private static byte[] CreateDummyRom(int bankCount = 2, byte fillValue = 0x00)
     {
         byte[] rom = new byte[bankCount * SegaMapper.BankSize];
@@ -184,6 +201,31 @@ public class SmsSystemTests
         var sysPal = new SmsSystem(CreateDummyRom(), videoStandard: VideoStandard.Pal);
         sysPal.StepFrame();
         Assert.Equal(313u * 684u, sysPal.Scheduler.MasterTicks);
+    }
+
+    [Fact]
+    public void VideoStandardCanChangeBetweenFramesWithoutResettingMachine()
+    {
+        var sys = new SmsSystem(CreateDummyRom(), videoStandard: VideoStandard.Ntsc);
+        sys.StepFrame();
+        var cpu = sys.Cpu;
+        var mixer = sys.AudioMixer;
+        sys.Ram[0x100] = 0xA5;
+        var before = sys.Scheduler.MasterTicks;
+
+        sys.VideoStandard = VideoStandard.Pal;
+        Assert.Same(cpu, sys.Cpu);
+        Assert.Same(mixer, sys.AudioMixer);
+        Assert.Equal(0xA5, sys.Ram[0x100]);
+        sys.StepFrame();
+        Assert.Equal(313u * 684u, sys.Scheduler.MasterTicks - before);
+
+        before = sys.Scheduler.MasterTicks;
+        sys.VideoStandard = VideoStandard.Ntsc;
+        sys.StepFrame();
+        Assert.Equal(262u * 684u, sys.Scheduler.MasterTicks - before);
+        Assert.Same(cpu, sys.Cpu);
+        Assert.Equal(0xA5, sys.Ram[0x100]);
     }
 
     [Fact]

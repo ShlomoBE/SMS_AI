@@ -141,18 +141,26 @@ public class YM2413Fm
 
         for (int ch = 0; ch < 9; ch++)
         {
-            _operators[ch, 0].State = EnvelopeState.Off;
-            _operators[ch, 0].AttenuationDb = 127.0;
-            _operators[ch, 1].State = EnvelopeState.Off;
-            _operators[ch, 1].AttenuationDb = 127.0;
+            ResetOperator(_operators[ch, 0]);
+            ResetOperator(_operators[ch, 1]);
         }
 
-        _bdMod.State = EnvelopeState.Off; _bdMod.AttenuationDb = 127.0;
-        _bdCar.State = EnvelopeState.Off; _bdCar.AttenuationDb = 127.0;
-        _sdCar.State = EnvelopeState.Off; _sdCar.AttenuationDb = 127.0;
-        _hhMod.State = EnvelopeState.Off; _hhMod.AttenuationDb = 127.0;
-        _tomCar.State = EnvelopeState.Off; _tomCar.AttenuationDb = 127.0;
-        _cymMod.State = EnvelopeState.Off; _cymMod.AttenuationDb = 127.0;
+        ResetOperator(_bdMod);
+        ResetOperator(_bdCar);
+        ResetOperator(_sdCar);
+        ResetOperator(_hhMod);
+        ResetOperator(_tomCar);
+        ResetOperator(_cymMod);
+        _noiseLfsr = 1;
+    }
+
+    private static void ResetOperator(OperatorEngine op)
+    {
+        op.State = EnvelopeState.Off;
+        op.AttenuationDb = 127.0;
+        op.PhaseAccumulator = 0;
+        op.OutputPrev1 = 0;
+        op.OutputPrev2 = 0;
     }
 
     #region Port Interface (Ports $F0, $F1, $F2)
@@ -380,12 +388,28 @@ public class YM2413Fm
         if (op.State == EnvelopeState.Off) return;
 
         // Phase advance
-        double mult = params_.Multiplier == 0 ? 0.5 : params_.Multiplier;
+        // Yamaha YM2413 application manual (https://www.smspower.org/maxim/Documents/YM2413ApplicationManual),
+        // table III-1: encodings B, D and E
+        // are aliases, not consecutive integer multipliers.
+        double mult = params_.Multiplier switch
+        {
+            0 => 0.5, 11 => 10.0, 13 => 12.0, 14 => 15.0,
+            _ => params_.Multiplier
+        };
         double phaseStep = (fNum << block) * mult;
-        op.PhaseAccumulator += (uint)(phaseStep * ticks * 4.0);
+        // Manual III-1-6: f = (chipClock / 72) * FNum * 2^(block-1)
+        // / 2^18 * MUL. LookupSin uses a 2^20-unit cycle, and the
+        // SMS master-clock argument is three ticks per YM2413 clock.
+        // Preserve the existing accumulator representation for save states.
+        op.PhaseAccumulator += (uint)(phaseStep * ticks / 108.0);
 
-        // Envelope advance based on elapsed time in seconds
-        double timeSec = ticks / 3579545.0;
+        // These approximate envelope rates are calibrated at a 3.579545 MHz
+        // YM2413 clock. The argument is SMS master ticks, not chip ticks;
+        // three master ticks correspond to one chip tick in this profile.
+        // Express elapsed time at the reference clock so changing the master
+        // oscillator changes the rate in real seconds, as the manual IV-1
+        // describes. This does not make the approximate envelope chip-accurate.
+        double timeSec = ticks / (3.0 * 3579545.0);
 
         switch (op.State)
         {
@@ -397,7 +421,8 @@ public class YM2413Fm
                 }
                 else
                 {
-                    double attackSpeed = Math.Pow(2, params_.AttackRate) * 16.0;
+                    // Yamaha manual table III-7: RATE zero does not advance.
+                    double attackSpeed = params_.AttackRate == 0 ? 0 : Math.Pow(2, params_.AttackRate) * 16.0;
                     op.AttenuationDb -= attackSpeed * timeSec;
                     if (op.AttenuationDb <= 0.0)
                     {
@@ -409,7 +434,7 @@ public class YM2413Fm
 
             case EnvelopeState.Decay:
                 double sustainDb = params_.SustainLevel * 3.0;
-                double decaySpeed = Math.Pow(2, params_.DecayRate) * 2.0;
+                double decaySpeed = params_.DecayRate == 0 ? 0 : Math.Pow(2, params_.DecayRate) * 2.0;
                 op.AttenuationDb += decaySpeed * timeSec;
                 if (op.AttenuationDb >= sustainDb)
                 {
@@ -422,7 +447,7 @@ public class YM2413Fm
                 if (!params_.EgType)
                 {
                     // Percussive sound: decay continues
-                    double percussiveSpeed = Math.Pow(2, params_.ReleaseRate) * 2.0;
+                    double percussiveSpeed = params_.ReleaseRate == 0 ? 0 : Math.Pow(2, params_.ReleaseRate) * 2.0;
                     op.AttenuationDb += percussiveSpeed * timeSec;
                     if (op.AttenuationDb >= 127.0)
                     {
@@ -434,7 +459,9 @@ public class YM2413Fm
 
             case EnvelopeState.Release:
                 double rate = sustainFlag ? 5.0 : params_.ReleaseRate;
-                double releaseSpeed = Math.Pow(2, rate) * 3.0;
+                // Yamaha manual III-1-5: decay and release have the same
+                // attenuation time at the same rate. Rates remain approximate.
+                double releaseSpeed = rate == 0 ? 0 : Math.Pow(2, rate) * 2.0;
                 op.AttenuationDb += releaseSpeed * timeSec;
                 if (op.AttenuationDb >= 127.0)
                 {
@@ -474,16 +501,25 @@ public class YM2413Fm
 
         // Modulator output
         double modAtten = mod.AttenuationDb + (patch.Modulator.TotalLevel * 0.75);
-        int feedbackShift = patch.Modulator.Feedback == 0 ? 0 : (9 - patch.Modulator.Feedback);
-        uint fbPhase = feedbackShift == 0 ? 0u : (uint)((mod.OutputPrev1 + mod.OutputPrev2) >> feedbackShift);
+        // Manual table III-6 specifies feedback indices pi/16 through 4*pi.
+        // Scale the mean of the two previous outputs (nominal peak 1024) to
+        // those angular ranges in our 2^20-unit cycle. The discrete feedback
+        // timing is still an approximation, not a hardware-verified model.
+        int feedback = patch.Modulator.Feedback;
+        int fbPhase = feedback == 0 ? 0 :
+            (mod.OutputPrev1 + mod.OutputPrev2) * (16 << (feedback - 1));
 
-        int modOut = LookupSin(mod.PhaseAccumulator + fbPhase, patch.Modulator.Waveform, modAtten);
+        int modOut = LookupSin(unchecked(mod.PhaseAccumulator + (uint)fbPhase), patch.Modulator.Waveform, modAtten);
         mod.OutputPrev2 = mod.OutputPrev1;
         mod.OutputPrev1 = modOut;
 
         // Carrier output modulated by Modulator
         double carAtten = car.AttenuationDb + (_volume[ch] * 3.0);
-        uint carPhaseMod = (uint)(car.PhaseAccumulator + (modOut * 4));
+        // Approximate MEKA's emu2413 operator-to-phase dynamic range
+        // (https://github.com/ocornut/meka/blob/4c00b68ed08f2745d5ad3eeb05f5e1f258b198be/meka/srcs/sound/emu2413/emu2413.cpp), converting
+        // its output and phase-index scales to this core's 1024 peak and 2^20
+        // cycle. This is a comparison-derived gain, not a measured chip value.
+        uint carPhaseMod = unchecked(car.PhaseAccumulator + (uint)(modOut * 4096));
         int carOut = LookupSin(carPhaseMod, patch.Carrier.Waveform, carAtten);
 
         return carOut;
@@ -502,7 +538,7 @@ public class YM2413Fm
             double modAtten = _bdMod.AttenuationDb + (patch6.Modulator.TotalLevel * 0.75);
             int modOut = LookupSin(_bdMod.PhaseAccumulator, patch6.Modulator.Waveform, modAtten);
             double carAtten = _bdCar.AttenuationDb + (_volume[6] * 3.0);
-            int bdOut = LookupSin((uint)(_bdCar.PhaseAccumulator + (modOut * 4)), patch6.Carrier.Waveform, carAtten);
+            int bdOut = LookupSin(unchecked(_bdCar.PhaseAccumulator + (uint)(modOut * 4096)), patch6.Carrier.Waveform, carAtten);
             sum += bdOut;
         }
 

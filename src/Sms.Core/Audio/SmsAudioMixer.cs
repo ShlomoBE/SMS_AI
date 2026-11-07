@@ -40,6 +40,12 @@ public sealed class SmsAudioMixer
     /// </summary>
     public SmsAudioMode Mode { get; set; } = SmsAudioMode.Auto;
 
+    /// <summary>Host output gain for PSG; 1 is the existing mix level.</summary>
+    public float PsgGain { get; set; } = 1f;
+
+    /// <summary>Host output gain for FM; 1 is the existing mix level.</summary>
+    public float FmGain { get; set; } = 1f;
+
     /// <summary>
     /// Gets the SN76489 Programmable Sound Generator sub-engine.
     /// </summary>
@@ -154,7 +160,7 @@ public sealed class SmsAudioMixer
             // Gain weighting: PSG = 0.5f, FM = 0.5f when both active
             for (int i = 0; i < sampleCount; i++)
             {
-                float sample = _psgBuffer[i] * 0.5f + _fmBuffer[i] * 0.5f;
+                float sample = _psgBuffer[i] * (0.5f * PsgGain) + _fmBuffer[i] * (0.5f * FmGain);
                 outputBuffer[i] = Math.Clamp(sample, -1.0f, 1.0f);
             }
         }
@@ -163,7 +169,7 @@ public sealed class SmsAudioMixer
             // Gain weighting: PSG = 1.0f when single source active
             for (int i = 0; i < sampleCount; i++)
             {
-                outputBuffer[i] = Math.Clamp(_psgBuffer[i], -1.0f, 1.0f);
+                outputBuffer[i] = Math.Clamp(_psgBuffer[i] * PsgGain, -1.0f, 1.0f);
             }
         }
         else if (fmActive)
@@ -171,7 +177,7 @@ public sealed class SmsAudioMixer
             // Gain weighting: FM = 1.0f when single source active
             for (int i = 0; i < sampleCount; i++)
             {
-                outputBuffer[i] = Math.Clamp(_fmBuffer[i], -1.0f, 1.0f);
+                outputBuffer[i] = Math.Clamp(_fmBuffer[i] * FmGain, -1.0f, 1.0f);
             }
         }
         else
