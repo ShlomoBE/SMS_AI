@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+TestResults/
+Roms/
+IDocs/
+*.sms
+*.gg
+*.rom
+*.bios
+*.sav
+*.state
