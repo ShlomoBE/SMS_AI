@@ -75,7 +75,7 @@ public sealed class ClockDividerTests
         foreach (ulong ticks in counts)
         {
             var divider = new ClockDivider(divisor, phase);
-            var reference = (System.Numerics.BigInteger)ticks + phase;
+            var reference = (global::System.Numerics.BigInteger)ticks + phase;
             Assert.Equal((ulong)(reference / divisor), divider.Advance(ticks));
             Assert.Equal((uint)(reference % divisor), divider.Phase);
         }

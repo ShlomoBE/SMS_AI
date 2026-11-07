@@ -291,7 +291,7 @@ public sealed class Z80SpecialInstructionsTests
                 expectedA = unchecked((byte)(expectedA + correction));
             }
 
-            int parity = System.Numerics.BitOperations.PopCount((uint)expectedA) % 2 == 0 ? 0x04 : 0;
+            int parity = global::System.Numerics.BitOperations.PopCount((uint)expectedA) % 2 == 0 ? 0x04 : 0;
             byte expectedF = (byte)(
                 (expectedA & 0x80) |
                 (expectedA == 0 ? 0x40 : 0) |

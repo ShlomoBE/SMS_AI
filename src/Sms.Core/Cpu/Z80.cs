@@ -531,7 +531,7 @@ public sealed class Z80(IZ80Bus bus)
             2 => (byte)(A | operand),
             _ => throw new InvalidOperationException()
         };
-        int parity = System.Numerics.BitOperations.PopCount((uint)result) % 2 == 0 ? 4 : 0;
+        int parity = global::System.Numerics.BitOperations.PopCount((uint)result) % 2 == 0 ? 4 : 0;
         A = result;
         F = (byte)((result & 0xA8) | (result == 0 ? 0x40 : 0)
             | (operation == 0 ? 0x10 : 0) | parity);
@@ -616,7 +616,7 @@ public sealed class Z80(IZ80Bus bus)
             _ => throw new InvalidOperationException()
         };
         WriteRegister(target, result);
-        int parity = System.Numerics.BitOperations.PopCount((uint)result) % 2 == 0 ? 4 : 0;
+        int parity = global::System.Numerics.BitOperations.PopCount((uint)result) % 2 == 0 ? 4 : 0;
         F = (byte)((result & 0xA8) | (result == 0 ? 0x40 : 0) | parity | carry);
         return target == 6 ? 15 : 8;
     }
@@ -710,7 +710,7 @@ public sealed class Z80(IZ80Bus bus)
                 }
 
                 A = a;
-                int parity = System.Numerics.BitOperations.PopCount((uint)a) % 2 == 0 ? 0x04 : 0;
+                int parity = global::System.Numerics.BitOperations.PopCount((uint)a) % 2 == 0 ? 0x04 : 0;
                 int sign = (a & 0x80) != 0 ? 0x80 : 0;
                 int zero = a == 0 ? 0x40 : 0;
                 int undocumented = a & 0x28;
@@ -905,7 +905,7 @@ public sealed class Z80(IZ80Bus bus)
             {
                 WriteRegisterNoMem(reg, val);
             }
-            int parity = System.Numerics.BitOperations.PopCount((uint)val) % 2 == 0 ? 4 : 0;
+            int parity = global::System.Numerics.BitOperations.PopCount((uint)val) % 2 == 0 ? 4 : 0;
             F = (byte)((F & 1) | (val & 0xA8) | (val == 0 ? 0x40 : 0) | parity);
             return 12;
         }
@@ -1149,7 +1149,7 @@ public sealed class Z80(IZ80Bus bus)
                         7 => (byte)(val >> 1),
                         _ => throw new InvalidOperationException()
                     };
-                    int parity = System.Numerics.BitOperations.PopCount((uint)res) % 2 == 0 ? 4 : 0;
+                    int parity = global::System.Numerics.BitOperations.PopCount((uint)res) % 2 == 0 ? 4 : 0;
                     F = (byte)((res & 0xA8) | (res == 0 ? 0x40 : 0) | parity | carry);
                 }
                 else
@@ -1466,7 +1466,7 @@ public sealed class Z80(IZ80Bus bus)
                 2 => (byte)(A | operand),
                 _ => throw new InvalidOperationException()
             };
-            int parity = System.Numerics.BitOperations.PopCount((uint)result) % 2 == 0 ? 4 : 0;
+            int parity = global::System.Numerics.BitOperations.PopCount((uint)result) % 2 == 0 ? 4 : 0;
             A = result;
             F = (byte)((result & 0xA8) | (result == 0 ? 0x40 : 0)
                 | (logicalOp == 0 ? 0x10 : 0) | parity);
