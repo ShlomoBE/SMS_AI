@@ -192,6 +192,12 @@ public partial class MainWindow : Window
             case Key.R:
                 _sms.Reset();
                 break;
+            case Key.F5:
+                QuickSaveState();
+                break;
+            case Key.F8:
+                QuickLoadState();
+                break;
         }
     }
 
@@ -300,6 +306,116 @@ public partial class MainWindow : Window
     }
 
     private void OnFileExit_Click(object? sender, RoutedEventArgs e) => Close();
+
+    private void OnQuickSaveState_Click(object? sender, RoutedEventArgs e) => QuickSaveState();
+    private void OnQuickLoadState_Click(object? sender, RoutedEventArgs e) => QuickLoadState();
+
+    private void QuickSaveState()
+    {
+        if (_sms == null) return;
+        try
+        {
+            string savePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "quicksave.state");
+            Sms.Core.State.SmsStateSerializer.SaveStateToFile(_sms, savePath);
+            StatusText.Text = "Quick State Saved (F5)";
+        }
+        catch (Exception ex)
+        {
+            ShowErrorDialog("Save State Error", ex.Message);
+        }
+    }
+
+    private void QuickLoadState()
+    {
+        if (_sms == null) return;
+        try
+        {
+            string savePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "quicksave.state");
+            if (!File.Exists(savePath))
+            {
+                StatusText.Text = "No Quick Save State found.";
+                return;
+            }
+            Sms.Core.State.SmsStateSerializer.LoadStateFromFile(_sms, savePath);
+            StatusText.Text = "Quick State Loaded (F8)";
+        }
+        catch (Exception ex)
+        {
+            ShowErrorDialog("Load State Error", ex.Message);
+        }
+    }
+
+    private async void OnSaveStateFile_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_sms == null) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null) return;
+
+        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Save Emulator State",
+            DefaultExtension = "state",
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("SMS Save State (*.state)") { Patterns = new[] { "*.state" } }
+            }
+        });
+
+        if (file != null)
+        {
+            try
+            {
+                Sms.Core.State.SmsStateSerializer.SaveStateToFile(_sms, file.Path.LocalPath);
+                StatusText.Text = $"State saved to: {file.Name}";
+            }
+            catch (Exception ex)
+            {
+                ShowErrorDialog("Save State Error", ex.Message);
+            }
+        }
+    }
+
+    private async void OnLoadStateFile_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_sms == null) return;
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel == null) return;
+
+        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Load Emulator State",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("SMS Save State (*.state)") { Patterns = new[] { "*.state" } }
+            }
+        });
+
+        if (files.Count > 0)
+        {
+            try
+            {
+                Sms.Core.State.SmsStateSerializer.LoadStateFromFile(_sms, files[0].Path.LocalPath);
+                StatusText.Text = $"State loaded from: {files[0].Name}";
+            }
+            catch (Exception ex)
+            {
+                ShowErrorDialog("Load State Error", ex.Message);
+            }
+        }
+    }
+
+    private void OnOpenDebugger_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_sms == null)
+        {
+            ShowErrorDialog("Debugger", "Please load a ROM before opening the Debugger.");
+            return;
+        }
+
+        var dbgWin = new DebuggerWindow(_sms);
+        dbgWin.Show(this);
+    }
 
     private void OnEmulationPause_Click(object? sender, RoutedEventArgs e)
     {

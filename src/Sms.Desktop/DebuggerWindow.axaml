@@ -1,0 +1,167 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Sms.Desktop.DebuggerWindow"
+        Title="Sega Master System Debugger"
+        Width="850" Height="620"
+        MinWidth="600" MinHeight="400"
+        WindowStartupLocation="CenterOwner"
+        Background="#181818"
+        Foreground="#EEEEEE">
+
+    <Grid RowDefinitions="Auto, *">
+
+        <!-- Debugger Toolbar -->
+        <Border Grid.Row="0" Background="#222222" BorderBrush="#333333" BorderThickness="0,0,0,1" Padding="8">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="BtnPauseResume" Content="Pause" Click="OnPauseResume_Click" Width="80" HorizontalAlignment="Center" />
+                <Button x:Name="BtnStepInstruction" Content="Step Instruction (F10)" Click="OnStepInstruction_Click" />
+                <Button x:Name="BtnStepScanline" Content="Step Scanline (F11)" Click="OnStepScanline_Click" />
+                <Separator Width="1" Height="20" Background="#444444" Margin="4,0" />
+                <TextBlock Text="Add PC Breakpoint (hex):" VerticalAlignment="Center" FontSize="12" Foreground="#AAAAAA" />
+                <TextBox x:Name="TxtBreakpoint" Width="80" Text="0000" FontFamily="Consolas, monospace" />
+                <Button Content="Add" Click="OnAddBreakpoint_Click" />
+                <Button Content="Clear All" Click="OnClearBreakpoints_Click" />
+            </StackPanel>
+        </Border>
+
+        <!-- Main Tabbed View -->
+        <TabControl Grid.Row="1" Margin="4">
+
+            <!-- Tab 1: CPU & Disassembly -->
+            <TabItem Header="CPU &amp; Disassembly">
+                <Grid ColumnDefinitions="300, *">
+
+                    <!-- CPU Registers Panel -->
+                    <Border Grid.Column="0" Background="#1E1E1E" BorderBrush="#333333" BorderThickness="1" CornerRadius="4" Margin="4" Padding="12">
+                        <ScrollViewer>
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="CPU Registers" FontSize="15" FontWeight="Bold" Foreground="#4CAF50" />
+
+                                <Grid ColumnDefinitions="Auto, *" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,4">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="PC:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtPc" Grid.Row="0" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" FontWeight="Bold" Foreground="#FFD54F" />
+
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="SP:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtSp" Grid.Row="1" Grid.Column="1" Text="0xDFFF" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="AF:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtAf" Grid.Row="2" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="3" Grid.Column="0" Text="BC:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtBc" Grid.Row="3" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="DE:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtDe" Grid.Row="4" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="5" Grid.Column="0" Text="HL:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtHl" Grid.Row="5" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="6" Grid.Column="0" Text="IX:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtIx" Grid.Row="6" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="7" Grid.Column="0" Text="IY:" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtIy" Grid.Row="7" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="8" Grid.Column="0" Text="AF':" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtAfAlt" Grid.Row="8" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="9" Grid.Column="0" Text="BC':" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtBcAlt" Grid.Row="9" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="10" Grid.Column="0" Text="DE':" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtDeAlt" Grid.Row="10" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+
+                                    <TextBlock Grid.Row="11" Grid.Column="0" Text="HL':" FontWeight="Bold" Foreground="#888888" Margin="0,2,8,2" />
+                                    <TextBlock x:Name="TxtHlAlt" Grid.Row="11" Grid.Column="1" Text="0x0000" FontFamily="Consolas, monospace" />
+                                </Grid>
+
+                                <Separator Background="#333333" />
+                                <TextBlock Text="Flags &amp; Interrupts" FontSize="13" FontWeight="Bold" Foreground="#4CAF50" />
+                                <TextBlock x:Name="TxtFlags" Text="Flags: [S Z 5 H 3 P N C] = 00000000" FontFamily="Consolas, monospace" FontSize="11" />
+                                <TextBlock x:Name="TxtInterrupts" Text="IFF1: 0  IFF2: 0  IM: 1  HALT: No" FontFamily="Consolas, monospace" FontSize="11" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Disassembly Box -->
+                    <Border Grid.Column="1" Background="#1E1E1E" BorderBrush="#333333" BorderThickness="1" CornerRadius="4" Margin="4" Padding="8">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Z80 Disassembly" FontSize="15" FontWeight="Bold" Foreground="#4CAF50" Margin="0,0,0,8" />
+                            <ListBox x:Name="LstDisasm" FontFamily="Consolas, monospace" FontSize="12" Background="#141414" />
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 2: Memory Viewer -->
+            <TabItem Header="Memory Viewer">
+                <Border Padding="4">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="0,0,0,8">
+                            <TextBlock Text="Go to Address (hex):" VerticalAlignment="Center" />
+                            <TextBox x:Name="TxtMemAddr" Text="0000" Width="80" FontFamily="Consolas, monospace" />
+                            <Button Content="Go" Click="OnGoToMemAddr_Click" />
+                        </StackPanel>
+
+                        <ListBox x:Name="LstMemoryHex" FontFamily="Consolas, monospace" FontSize="12" Background="#141414" />
+                    </DockPanel>
+                </Border>
+            </TabItem>
+
+            <!-- Tab 3: VDP & Palettes -->
+            <TabItem Header="VDP Inspector">
+                <Grid ColumnDefinitions="300, *">
+                    <!-- VDP Registers -->
+                    <Border Grid.Column="0" Background="#1E1E1E" BorderBrush="#333333" BorderThickness="1" CornerRadius="4" Margin="4" Padding="12">
+                        <ScrollViewer>
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="VDP Registers (R0 - R10)" FontSize="15" FontWeight="Bold" Foreground="#4CAF50" />
+                                <ListBox x:Name="LstVdpRegisters" FontFamily="Consolas, monospace" FontSize="12" Background="#141414" Height="260" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Palettes & Status -->
+                    <Border Grid.Column="1" Background="#1E1E1E" BorderBrush="#333333" BorderThickness="1" CornerRadius="4" Margin="4" Padding="12">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="CRAM Palette 0 (Background)" FontSize="14" FontWeight="Bold" Foreground="#FFD54F" />
+                            <ItemsControl x:Name="Palette0Container">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+
+                            <TextBlock Text="CRAM Palette 1 (Sprites &amp; Palette 1 BG)" FontSize="14" FontWeight="Bold" Foreground="#FFD54F" />
+                            <ItemsControl x:Name="Palette1Container">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 4: Tile Viewer -->
+            <TabItem Header="Tile Viewer (512 Patterns)">
+                <Border Padding="4">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,8">
+                            <TextBlock Text="512 VDP Mode 4 Tiles (8x8 pixels each decoded from VRAM)" VerticalAlignment="Center" FontSize="13" Foreground="#888888" />
+                            <Button Content="Refresh Tile Map" Click="OnRefreshTiles_Click" />
+                        </StackPanel>
+
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                            <Image x:Name="ImgTileAtlas" Stretch="None" />
+                        </ScrollViewer>
+                    </DockPanel>
+                </Border>
+            </TabItem>
+
+        </TabControl>
+    </Grid>
+</Window>

@@ -20,6 +20,11 @@
             <MenuItem Header="_Emulation">
                 <MenuItem x:Name="MenuPause" Header="_Pause / Resume" Click="OnEmulationPause_Click" InputGesture="P" />
                 <MenuItem Header="_Reset" Click="OnEmulationReset_Click" InputGesture="Ctrl+R" />
+                <Separator />
+                <MenuItem Header="Quick _Save State" Click="OnQuickSaveState_Click" InputGesture="F5" />
+                <MenuItem Header="Quick _Load State" Click="OnQuickLoadState_Click" InputGesture="F8" />
+                <MenuItem Header="Save State _ToFile..." Click="OnSaveStateFile_Click" />
+                <MenuItem Header="Load State _FromFile..." Click="OnLoadStateFile_Click" />
             </MenuItem>
             <MenuItem Header="_Video">
                 <MenuItem x:Name="MenuVideoNtsc" Header="NTSC (60 Hz)" Click="OnVideoNtsc_Click" ToggleType="Radio" IsChecked="True" />
@@ -29,6 +34,9 @@
                 <MenuItem x:Name="MenuAudioAuto" Header="Automatic" Click="OnAudioAuto_Click" ToggleType="Radio" IsChecked="True" />
                 <MenuItem x:Name="MenuAudioForcePsg" Header="Force PSG" Click="OnAudioForcePsg_Click" ToggleType="Radio" />
                 <MenuItem x:Name="MenuAudioForceFm" Header="Force FM" Click="OnAudioForceFm_Click" ToggleType="Radio" />
+            </MenuItem>
+            <MenuItem Header="_Tools">
+                <MenuItem Header="Open _Debugger..." Click="OnOpenDebugger_Click" InputGesture="Ctrl+D" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="Controls &amp; Hotkeys" Click="OnHelpControls_Click" />

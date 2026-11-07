@@ -147,6 +147,22 @@ public sealed class SmsSystem
     }
 
     /// <summary>
+    /// Restores VDP fixture state from save state.
+    /// </summary>
+    public void RestoreVdpFixture(byte[] vram, byte[] cram, byte[] registers, int address, int code, bool secondControlByte, byte readBuffer, byte status, bool linePending)
+    {
+        Bus.Vdp = VdpPorts.CreateDeterministicFixture(vram, cram, registers, address, code, secondControlByte, readBuffer, status, linePending);
+    }
+
+    /// <summary>
+    /// Restores Scheduler state from save state.
+    /// </summary>
+    public void RestoreScheduler(ulong masterTicks, uint cpuPhase, uint vdpPhase, uint psgPhase)
+    {
+        Scheduler = new MasterScheduler(masterTicks, cpuPhase, vdpPhase, psgPhase);
+    }
+
+    /// <summary>
     /// Executes one CPU instruction, checking for Pause NMI and VDP IRQ delivery, and advancing scheduler.
     /// Returns CPU T-states consumed by the step.
     /// </summary>
