@@ -74,6 +74,8 @@ public partial class MainWindow
         };
         var folder = new TextBox { Text = _settings.RomFolder };
         var browse = new Button { Content = "Browse..." };
+        var savesFolder = new TextBox { Text = _settings.SavesFolder };
+        var savesBrowse = new Button { Content = "Browse..." };
         var save = new Button { Content = "Save", IsDefault = true };
         var cancel = new Button { Content = "Cancel", IsCancel = true };
         var dialog = new Window { Title = "Settings — defaults for newly loaded ROMs", Width = 520, SizeToContent = SizeToContent.Height, WindowStartupLocation = WindowStartupLocation.CenterOwner, CanResize = false, Icon = Icon };
@@ -91,16 +93,32 @@ public partial class MainWindow
             }
             catch (Exception ex) { ShowErrorDialog("ROM folder", ex.Message, dialog); }
         };
+        savesBrowse.Click += async (_, _) =>
+        {
+            try
+            {
+                var picked = await dialog.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = "Choose default Save States folder", AllowMultiple = false });
+                if (picked.Count > 0)
+                {
+                    var path = picked[0].TryGetLocalPath();
+                    if (path == null) ShowErrorDialog("Saves folder", "Please select a local folder.", dialog);
+                    else savesFolder.Text = path;
+                }
+            }
+            catch (Exception ex) { ShowErrorDialog("Saves folder", ex.Message, dialog); }
+        };
         cancel.Click += (_, _) => dialog.Close();
         save.Click += (_, _) =>
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(folder.Text)) throw new ArgumentException("Choose a ROM folder or enter Roms for the default.");
+                if (string.IsNullOrWhiteSpace(savesFolder.Text)) throw new ArgumentException("Choose a Saves folder or enter Saves for the default.");
                 int psgPercent = (int)Math.Round(psgVolume.Value);
                 int fmPercent = (int)Math.Round(fmVolume.Value);
-                var next = new DesktopSettings { VideoStandard = video.SelectedIndex == 1 ? VideoStandard.Pal : VideoStandard.Ntsc, AudioMode = audio.SelectedIndex switch { 1 => SmsAudioMode.ForcePsg, 2 => SmsAudioMode.ForceFm, _ => SmsAudioMode.Auto }, RomFolder = folder.Text.Trim(), PsgVolumePercent = psgPercent, FmVolumePercent = fmPercent };
+                var next = new DesktopSettings { VideoStandard = video.SelectedIndex == 1 ? VideoStandard.Pal : VideoStandard.Ntsc, AudioMode = audio.SelectedIndex switch { 1 => SmsAudioMode.ForcePsg, 2 => SmsAudioMode.ForceFm, _ => SmsAudioMode.Auto }, RomFolder = folder.Text.Trim(), SavesFolder = savesFolder.Text.Trim(), PsgVolumePercent = psgPercent, FmVolumePercent = fmPercent };
                 _ = next.ResolvedRomFolder;
+                _ = next.ResolvedSavesFolder;
                 next.Save();
                 lock (_emuLock) { _settings = next; }
                 dialog.Close();
@@ -115,6 +133,7 @@ public partial class MainWindow
             psgLabel, psgVolume,
             fmLabel, fmVolume,
             new TextBlock { Text = "Default ROM folder (relative to the application folder)" }, folder, browse,
+            new TextBlock { Text = "Default Save States folder (relative to the application folder)" }, savesFolder, savesBrowse,
             new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 8, Children = { save, cancel } }
         }};
         try { await dialog.ShowDialog(this); }

@@ -22,7 +22,7 @@ namespace Sms.Desktop;
 
 public partial class MainWindow : Window
 {
-    public const string AppVersion = "v1.7.0";
+    public const string AppVersion = "v1.8.0";
 
     [DllImport("winmm.dll")]
     private static extern int timeBeginPeriod(uint uPeriod);
@@ -556,7 +556,9 @@ public partial class MainWindow : Window
             if (_sms == null) return;
             try
             {
-                string savePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "quicksave.state");
+                string savesDir = _settings.ResolvedSavesFolder;
+                Directory.CreateDirectory(savesDir);
+                string savePath = Path.Combine(savesDir, "quicksave.state");
                 Sms.Core.State.SmsStateSerializer.SaveStateToFile(_sms, savePath);
                 StatusText.Text = "Quick State Saved (F5)";
                 ShowToastNotification("Quick State Saved (F5)", "💾");
@@ -575,7 +577,8 @@ public partial class MainWindow : Window
             if (_sms == null) return;
             try
             {
-                string savePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "quicksave.state");
+                string savesDir = _settings.ResolvedSavesFolder;
+                string savePath = Path.Combine(savesDir, "quicksave.state");
                 if (!File.Exists(savePath))
                 {
                     StatusText.Text = "No Quick Save State found.";
@@ -602,19 +605,24 @@ public partial class MainWindow : Window
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel == null) return;
 
-        var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            Title = "Save Emulator State",
-            DefaultExtension = "state",
-            FileTypeChoices = new[]
-            {
-                new FilePickerFileType("SMS Save State (*.state)") { Patterns = new[] { "*.state" } }
-            }
-        });
+            string savesDir = _settings.ResolvedSavesFolder;
+            Directory.CreateDirectory(savesDir);
+            var folder = await topLevel.StorageProvider.TryGetFolderFromPathAsync(new Uri(savesDir));
 
-        if (file != null)
-        {
-            try
+            var file = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save Emulator State",
+                SuggestedStartLocation = folder,
+                DefaultExtension = "state",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("SMS Save State (*.state)") { Patterns = new[] { "*.state" } }
+                }
+            });
+
+            if (file != null)
             {
                 lock (_emuLock)
                 {
@@ -623,10 +631,10 @@ public partial class MainWindow : Window
                 StatusText.Text = $"State saved to: {file.Name}";
                 ShowToastNotification($"Saved to {file.Name}", "💾");
             }
-            catch (Exception ex)
-            {
-                ShowErrorDialog("Save State Error", ex.Message);
-            }
+        }
+        catch (Exception ex)
+        {
+            ShowErrorDialog("Save State Error", ex.Message);
         }
     }
 
@@ -636,19 +644,25 @@ public partial class MainWindow : Window
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel == null) return;
 
-        var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        try
         {
-            Title = "Load Emulator State",
-            AllowMultiple = false,
-            FileTypeFilter = new[]
-            {
-                new FilePickerFileType("SMS Save State (*.state)") { Patterns = new[] { "*.state" } }
-            }
-        });
+            string savesDir = _settings.ResolvedSavesFolder;
+            var folder = Directory.Exists(savesDir)
+                ? await topLevel.StorageProvider.TryGetFolderFromPathAsync(new Uri(savesDir))
+                : null;
 
-        if (files.Count > 0)
-        {
-            try
+            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Load Emulator State",
+                SuggestedStartLocation = folder,
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("SMS Save State (*.state)") { Patterns = new[] { "*.state" } }
+                }
+            });
+
+            if (files.Count > 0)
             {
                 lock (_emuLock)
                 {
@@ -660,10 +674,10 @@ public partial class MainWindow : Window
                 StatusText.Text = $"State loaded from: {files[0].Name}";
                 ShowToastNotification($"Loaded {files[0].Name}", "📂");
             }
-            catch (Exception ex)
-            {
-                ShowErrorDialog("Load State Error", ex.Message);
-            }
+        }
+        catch (Exception ex)
+        {
+            ShowErrorDialog("Load State Error", ex.Message);
         }
     }
 

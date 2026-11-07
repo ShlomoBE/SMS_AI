@@ -9,6 +9,7 @@ internal sealed class DesktopSettings
     public VideoStandard VideoStandard { get; set; } = VideoStandard.Ntsc;
     public SmsAudioMode AudioMode { get; set; } = SmsAudioMode.Auto;
     public string RomFolder { get; set; } = "Roms";
+    public string SavesFolder { get; set; } = "Saves";
     public int PsgVolumePercent { get; set; } = 100;
     public int FmVolumePercent { get; set; } = 100;
 
@@ -16,6 +17,7 @@ internal sealed class DesktopSettings
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Sms.Desktop", "settings.json");
 
     public string ResolvedRomFolder => Path.GetFullPath(RomFolder, AppContext.BaseDirectory);
+    public string ResolvedSavesFolder => Path.GetFullPath(SavesFolder, AppContext.BaseDirectory);
 
     public static DesktopSettings Load(out string? error)
     {
@@ -28,7 +30,14 @@ internal sealed class DesktopSettings
                 || string.IsNullOrWhiteSpace(settings.RomFolder)
                 || settings.PsgVolumePercent is < 0 or > 200 || settings.FmVolumePercent is < 0 or > 200)
                 throw new InvalidDataException("Settings contain invalid values.");
+
+            if (string.IsNullOrWhiteSpace(settings.SavesFolder))
+            {
+                settings.SavesFolder = "Saves";
+            }
+
             _ = settings.ResolvedRomFolder;
+            _ = settings.ResolvedSavesFolder;
             return settings;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or ArgumentException or NotSupportedException or System.Security.SecurityException)

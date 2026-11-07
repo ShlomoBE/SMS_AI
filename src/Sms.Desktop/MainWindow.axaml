@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Sms.Desktop.MainWindow"
-        Title="Sega Master System Emulator v1.7.0"
+        Title="Sega Master System Emulator v1.8.0"
         Width="800" Height="600"
         MinWidth="320" MinHeight="240"
         WindowStartupLocation="CenterScreen"
@@ -63,7 +63,7 @@
             <!-- Drag & Drop overlay label when empty -->
             <StackPanel x:Name="DropPrompt" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
                 <Image Source="avares://Sms.Desktop/Assets/Logo.png" MaxWidth="300" MaxHeight="180" Stretch="Uniform" />
-                <TextBlock Text="🎮 Sega Master System v1.7.0" FontSize="24" FontWeight="Bold" Foreground="#666666" HorizontalAlignment="Center" />
+                <TextBlock Text="🎮 Sega Master System v1.8.0" FontSize="24" FontWeight="Bold" Foreground="#666666" HorizontalAlignment="Center" />
                 <TextBlock Text="Drag and drop a .sms or .bin ROM file here" FontSize="14" Foreground="#444444" HorizontalAlignment="Center" />
                 <TextBlock Text="Or click File -> Open ROM..." FontSize="12" Foreground="#333333" HorizontalAlignment="Center" />
             </StackPanel>
