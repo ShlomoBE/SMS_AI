@@ -10,3 +10,17 @@ IDocs/
 *.bios
 *.sav
 *.state
+
+# Google API Keys & Secrets
+.env
+*.env
+
+# OpenChamber & IDE settings
+.openchamber/
+.vscode/
+
+# Dependencies & Build outputs
+node_modules/
+__pycache__/
+dist/
+build/

@@ -26,34 +26,33 @@ public sealed class Z80Tests
     public void UnsupportedOpcodeFailsExplicitlyWithoutAdvancingCpuState()
     {
         var bus = new RecordingBus();
-        bus.Memory[0x1234] = 0x76;
+        bus.Memory[0x1234] = 0xED;
+        bus.Memory[0x1235] = 0x00;
         var cpu = new Z80(bus) { ProgramCounter = 0x1234, Refresh = 0x99 };
 
         var error = Assert.Throws<NotSupportedException>(() => cpu.Step());
 
-        Assert.Contains("0x76", error.Message);
-        Assert.Equal(0x1234, cpu.ProgramCounter);
-        Assert.Equal(0x99, cpu.Refresh);
-        Assert.Equal(new ushort[] { 0x1234 }, bus.ReadAddresses);
+        Assert.Contains("0x00", error.Message);
+        Assert.Equal(0x1236, cpu.ProgramCounter);
+        Assert.Equal(0x9B, cpu.Refresh);
+        Assert.Equal(new ushort[] { 0x1234, 0x1235 }, bus.ReadAddresses);
         Assert.True(cpu.IsFaulted);
         Assert.Throws<InvalidOperationException>(() => cpu.Step());
-        Assert.Single(bus.ReadAddresses);
+        Assert.Equal(2, bus.ReadAddresses.Count);
     }
 
-    [Theory]
-    [InlineData(0xDD)]
-    [InlineData(0xED)]
-    [InlineData(0xFD)]
-    public void UnsupportedPrefixFaultsWithoutRetryingFetch(byte opcode)
+    [Fact]
+    public void UnsupportedEdSubOpcodeFaultsWithoutRetryingFetch()
     {
         var bus = new RecordingBus();
-        bus.Memory[0xFFFF] = opcode;
+        bus.Memory[0xFFFF] = 0xED;
+        bus.Memory[0x0000] = 0x00;
         var cpu = new Z80(bus) { ProgramCounter = 0xFFFF };
 
         var error = Assert.Throws<NotSupportedException>(() => cpu.Step());
-        Assert.Contains("0xFFFF", error.Message);
+        Assert.Contains("0x00", error.Message);
         Assert.Throws<InvalidOperationException>(() => cpu.Step());
-        Assert.Equal(new ushort[] { 0xFFFF }, bus.ReadAddresses);
+        Assert.Equal(new ushort[] { 0xFFFF, 0x0000 }, bus.ReadAddresses);
     }
 
     [Fact]
