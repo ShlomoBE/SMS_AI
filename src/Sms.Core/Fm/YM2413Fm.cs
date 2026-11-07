@@ -34,6 +34,7 @@ public class OperatorEngine
         }
         else
         {
+            AttenuationDb = 48.0; // EG attenuation starts at -48 dB (max 6-bit counter) on KeyOn
             State = EnvelopeState.Attack;
         }
     }
@@ -53,20 +54,20 @@ public class OperatorEngine
 public class YM2413Fm
 {
     private static readonly ushort[] LogSinTable = new ushort[256];
-    private static readonly ushort[] ExpTable = new ushort[1024];
+    private static readonly ushort[] ExpTable = new ushort[4096];
 
     static YM2413Fm()
     {
         for (int i = 0; i < 256; i++)
         {
             double sinVal = Math.Sin((i + 0.5) * Math.PI / 512.0);
-            double logVal = -Math.Log2(sinVal) * 256.0;
+            double logVal = -Math.Log2(sinVal) * 192.0;
             LogSinTable[i] = (ushort)Math.Clamp((int)Math.Round(logVal), 0, 65535);
         }
 
-        for (int i = 0; i < 1024; i++)
+        for (int i = 0; i < 4096; i++)
         {
-            double expVal = Math.Pow(2.0, -i / 256.0);
+            double expVal = Math.Pow(2.0, -i / 192.0);
             ExpTable[i] = (ushort)Math.Clamp((int)Math.Round(expVal * 1024.0), 0, 65535);
         }
     }
@@ -383,21 +384,33 @@ public class YM2413Fm
         double phaseStep = (fNum << block) * mult;
         op.PhaseAccumulator += (uint)(phaseStep * ticks * 4.0);
 
-        // Envelope advance
+        // Envelope advance based on elapsed time in seconds
+        double timeSec = ticks / 3579545.0;
+
         switch (op.State)
         {
             case EnvelopeState.Attack:
-                op.AttenuationDb -= (params_.AttackRate + 1) * 2.0 * ticks;
-                if (op.AttenuationDb <= 0.0)
+                if (params_.AttackRate == 15)
                 {
                     op.AttenuationDb = 0.0;
                     op.State = EnvelopeState.Decay;
+                }
+                else
+                {
+                    double attackSpeed = Math.Pow(2, params_.AttackRate) * 16.0;
+                    op.AttenuationDb -= attackSpeed * timeSec;
+                    if (op.AttenuationDb <= 0.0)
+                    {
+                        op.AttenuationDb = 0.0;
+                        op.State = EnvelopeState.Decay;
+                    }
                 }
                 break;
 
             case EnvelopeState.Decay:
                 double sustainDb = params_.SustainLevel * 3.0;
-                op.AttenuationDb += (params_.DecayRate + 1) * 0.5 * ticks;
+                double decaySpeed = Math.Pow(2, params_.DecayRate) * 2.0;
+                op.AttenuationDb += decaySpeed * timeSec;
                 if (op.AttenuationDb >= sustainDb)
                 {
                     op.AttenuationDb = sustainDb;
@@ -409,7 +422,8 @@ public class YM2413Fm
                 if (!params_.EgType)
                 {
                     // Percussive sound: decay continues
-                    op.AttenuationDb += (params_.ReleaseRate + 1) * 0.5 * ticks;
+                    double percussiveSpeed = Math.Pow(2, params_.ReleaseRate) * 2.0;
+                    op.AttenuationDb += percussiveSpeed * timeSec;
                     if (op.AttenuationDb >= 127.0)
                     {
                         op.AttenuationDb = 127.0;
@@ -419,8 +433,9 @@ public class YM2413Fm
                 break;
 
             case EnvelopeState.Release:
-                double rate = sustainFlag ? 5.0 : (params_.ReleaseRate + 1);
-                op.AttenuationDb += rate * 0.8 * ticks;
+                double rate = sustainFlag ? 5.0 : params_.ReleaseRate;
+                double releaseSpeed = Math.Pow(2, rate) * 3.0;
+                op.AttenuationDb += releaseSpeed * timeSec;
                 if (op.AttenuationDb >= 127.0)
                 {
                     op.AttenuationDb = 127.0;
@@ -544,10 +559,10 @@ public class YM2413Fm
         if (waveform == 1 && isNegative)
             return 0;
 
-        int logAtten = (int)(attenuationDb * (256.0 / 6.0));
+        int logAtten = (int)(attenuationDb * 32.0);
         int totalLog = logSin + logAtten;
 
-        if (totalLog >= 1024)
+        if (totalLog >= 4096)
             return 0;
 
         int amp = ExpTable[totalLog];

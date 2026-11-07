@@ -1,16 +1,17 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Sms.Desktop.MainWindow"
-        Title="Sega Master System Emulator"
+        Title="Sega Master System Emulator v1.6.0"
         Width="800" Height="600"
         MinWidth="320" MinHeight="240"
         WindowStartupLocation="CenterScreen"
+        Focusable="True"
         DragDrop.AllowDrop="True">
 
     <DockPanel LastChildFill="True">
 
         <!-- Top Menu Bar -->
-        <Menu DockPanel.Dock="Top" Background="#1E1E1E">
+        <Menu DockPanel.Dock="Top" Background="#1E1E1E" Focusable="False" KeyboardNavigation.IsTabStop="False">
             <MenuItem Header="_File">
                 <MenuItem Header="Open _ROM..." Click="OnFileOpenRom_Click" InputGesture="Ctrl+O" />
                 <MenuItem Header="Open _BIOS..." Click="OnFileOpenBios_Click" />
@@ -58,10 +59,27 @@
 
             <!-- Drag & Drop overlay label when empty -->
             <StackPanel x:Name="DropPrompt" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-                <TextBlock Text="🎮 Sega Master System" FontSize="24" FontWeight="Bold" Foreground="#666666" HorizontalAlignment="Center" />
+                <TextBlock Text="🎮 Sega Master System v1.6.0" FontSize="24" FontWeight="Bold" Foreground="#666666" HorizontalAlignment="Center" />
                 <TextBlock Text="Drag and drop a .sms or .bin ROM file here" FontSize="14" Foreground="#444444" HorizontalAlignment="Center" />
                 <TextBlock Text="Or click File -> Open ROM..." FontSize="12" Foreground="#333333" HorizontalAlignment="Center" />
             </StackPanel>
+
+            <!-- Floating Toast Popup Notification in Bottom-Right Corner -->
+            <Border x:Name="NotificationToast"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,20,20"
+                    Background="#EE181825"
+                    BorderBrush="#45475A"
+                    BorderThickness="1.5"
+                    CornerRadius="8"
+                    Padding="14,10"
+                    IsVisible="False">
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock x:Name="NotificationIcon" Text="🔄" FontSize="16" VerticalAlignment="Center" />
+                    <TextBlock x:Name="NotificationText" Text="System Reset" FontSize="13" FontWeight="SemiBold" Foreground="#CDD6F4" VerticalAlignment="Center" />
+                </StackPanel>
+            </Border>
         </Grid>
 
     </DockPanel>

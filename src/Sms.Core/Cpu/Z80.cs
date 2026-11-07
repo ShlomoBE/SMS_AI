@@ -117,6 +117,11 @@ public sealed class Z80(IZ80Bus bus)
             bool immediateLoad = (opcode & 0xC7) == 0x06;
             bool wordImmediateLoad = (opcode & 0xCF) == 0x01;
             bool incDec8 = (opcode & 0xC6) == 0x04;
+            bool incDec16 = (opcode & 0xC7) is 0x03 or 0x0B;
+            bool pushPop = (opcode & 0xCF) is 0xC5 or 0xC1;
+            bool indirectALoadStore = opcode is 0x02 or 0x12 or 0x0A or 0x1A or 0x32 or 0x3A;
+            bool accRotates = opcode is 0x07 or 0x0F or 0x17 or 0x1F;
+            bool djnz = opcode == 0x10;
             bool arithmetic = opcode is >= 0x80 and <= 0x9F or >= 0xB8 and <= 0xBF
                 or 0xC6 or 0xCE or 0xD6 or 0xDE or 0xFE;
             bool logical = opcode is >= 0xA0 and <= 0xB7 or 0xE6 or 0xEE or 0xF6;
@@ -128,7 +133,7 @@ public sealed class Z80(IZ80Bus bus)
             bool specialOps = opcode is 0x08 or 0x27 or 0x2F or 0x37 or 0x3F or 0x76 or 0xD9 or 0xE3 or 0xEB or 0xF3 or 0xFB;
             bool direct16BitLoads = opcode is 0x22 or 0x2A or 0xF9;
 
-            if (opcode != 0x00 && opcode != 0xCB && opcode != 0xED && !ioUnprefixed && !registerLoad && !immediateLoad && !wordImmediateLoad && !incDec8 && !arithmetic && !logical && !controlFlow && !addHl && !specialOps && !direct16BitLoads)
+            if (opcode != 0x00 && opcode != 0xCB && opcode != 0xED && !ioUnprefixed && !registerLoad && !immediateLoad && !wordImmediateLoad && !incDec8 && !incDec16 && !pushPop && !indirectALoadStore && !accRotates && !djnz && !arithmetic && !logical && !controlFlow && !addHl && !specialOps && !direct16BitLoads)
             {
                 throw new NotSupportedException($"Z80 opcode 0x{opcode:X2} at 0x{ProgramCounter:X4} is not implemented.");
             }
@@ -142,6 +147,11 @@ public sealed class Z80(IZ80Bus bus)
             else if (ioUnprefixed) cycles = ExecuteUnprefixedIo(opcode);
             else if (controlFlow) cycles = ExecuteControlFlow(opcode);
             else if (incDec8) cycles = ExecuteIncDec8(opcode);
+            else if (incDec16) cycles = ExecuteIncDec16(opcode);
+            else if (pushPop) cycles = ExecutePushPop(opcode);
+            else if (indirectALoadStore) cycles = ExecuteIndirectALoadStore(opcode);
+            else if (accRotates) cycles = ExecuteAccRotates(opcode);
+            else if (djnz) cycles = ExecuteDjnz();
             else if (arithmetic) cycles = ExecuteArithmetic(opcode);
             else if (logical) cycles = ExecuteLogical(opcode);
             else if (addHl) cycles = ExecuteAddHl(opcode);
@@ -231,7 +241,6 @@ public sealed class Z80(IZ80Bus bus)
         if (IsHalted)
         {
             IsHalted = false;
-            ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
         }
 
         IFF2 = IFF1;
@@ -260,7 +269,6 @@ public sealed class Z80(IZ80Bus bus)
         if (IsHalted)
         {
             IsHalted = false;
-            ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
         }
 
         IFF1 = false;
@@ -646,6 +654,172 @@ public sealed class Z80(IZ80Bus bus)
         return target == 6 ? 15 : 8;
     }
 
+    private int ExecuteIncDec16(byte opcode)
+    {
+        bool decrement = (opcode & 0x08) != 0;
+        int regPair = (opcode >> 4) & 3;
+        ushort val = regPair switch
+        {
+            0 => BC,
+            1 => DE,
+            2 => HL,
+            3 => StackPointer,
+            _ => 0
+        };
+        val = unchecked((ushort)(val + (decrement ? -1 : 1)));
+        switch (regPair)
+        {
+            case 0: BC = val; break;
+            case 1: DE = val; break;
+            case 2: HL = val; break;
+            case 3: StackPointer = val; break;
+        }
+        return 6;
+    }
+
+    private int ExecutePushPop(byte opcode)
+    {
+        bool isPush = (opcode & 0x0F) == 0x05;
+        int regPair = (opcode >> 4) & 3;
+
+        if (isPush)
+        {
+            byte high = regPair switch
+            {
+                0 => B,
+                1 => D,
+                2 => H,
+                3 => A,
+                _ => 0
+            };
+            byte low = regPair switch
+            {
+                0 => C,
+                1 => E,
+                2 => L,
+                3 => F,
+                _ => 0
+            };
+            StackPointer = unchecked((ushort)(StackPointer - 1));
+            _bus.WriteMemory(StackPointer, high);
+            StackPointer = unchecked((ushort)(StackPointer - 1));
+            _bus.WriteMemory(StackPointer, low);
+            return 11;
+        }
+        else // POP
+        {
+            byte low = _bus.ReadMemory(StackPointer);
+            StackPointer = unchecked((ushort)(StackPointer + 1));
+            byte high = _bus.ReadMemory(StackPointer);
+            StackPointer = unchecked((ushort)(StackPointer + 1));
+            switch (regPair)
+            {
+                case 0: B = high; C = low; break;
+                case 1: D = high; E = low; break;
+                case 2: H = high; L = low; break;
+                case 3: A = high; F = low; break;
+            }
+            return 10;
+        }
+    }
+
+    private int ExecuteIndirectALoadStore(byte opcode)
+    {
+        switch (opcode)
+        {
+            case 0x02: // LD (BC), A
+                _bus.WriteMemory(BC, A);
+                _memoryPointer = (ushort)((A << 8) | ((BC + 1) & 0xFF));
+                return 7;
+            case 0x12: // LD (DE), A
+                _bus.WriteMemory(DE, A);
+                _memoryPointer = (ushort)((A << 8) | ((DE + 1) & 0xFF));
+                return 7;
+            case 0x0A: // LD A, (BC)
+                A = _bus.ReadMemory(BC);
+                _memoryPointer = unchecked((ushort)(BC + 1));
+                return 7;
+            case 0x1A: // LD A, (DE)
+                A = _bus.ReadMemory(DE);
+                _memoryPointer = unchecked((ushort)(DE + 1));
+                return 7;
+            case 0x32: // LD (nn), A
+            {
+                byte low = _bus.ReadMemory(ProgramCounter);
+                ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+                byte high = _bus.ReadMemory(ProgramCounter);
+                ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+                ushort address = (ushort)((high << 8) | low);
+                _bus.WriteMemory(address, A);
+                _memoryPointer = (ushort)((A << 8) | ((address + 1) & 0xFF));
+                return 13;
+            }
+            case 0x3A: // LD A, (nn)
+            {
+                byte low = _bus.ReadMemory(ProgramCounter);
+                ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+                byte high = _bus.ReadMemory(ProgramCounter);
+                ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+                ushort address = (ushort)((high << 8) | low);
+                A = _bus.ReadMemory(address);
+                _memoryPointer = unchecked((ushort)(address + 1));
+                return 13;
+            }
+            default:
+                throw new InvalidOperationException($"Invalid indirect A load/store opcode 0x{opcode:X2}");
+        }
+    }
+
+    private int ExecuteAccRotates(byte opcode)
+    {
+        bool oldCarry = (F & 0x01) != 0;
+        bool newCarry;
+        byte result;
+
+        switch (opcode)
+        {
+            case 0x07: // RLCA
+                newCarry = (A & 0x80) != 0;
+                result = (byte)((A << 1) | (newCarry ? 1 : 0));
+                break;
+            case 0x0F: // RRCA
+                newCarry = (A & 0x01) != 0;
+                result = (byte)((A >> 1) | (newCarry ? 0x80 : 0));
+                break;
+            case 0x17: // RLA
+                newCarry = (A & 0x80) != 0;
+                result = (byte)((A << 1) | (oldCarry ? 1 : 0));
+                break;
+            case 0x1F: // RRA
+                newCarry = (A & 0x01) != 0;
+                result = (byte)((A >> 1) | (oldCarry ? 0x80 : 0));
+                break;
+            default:
+                throw new InvalidOperationException($"Invalid accumulator rotate opcode 0x{opcode:X2}");
+        }
+
+        A = result;
+        F = (byte)((F & 0xC4) | (result & 0x28) | (newCarry ? 0x01 : 0));
+        return 4;
+    }
+
+    private int ExecuteDjnz()
+    {
+        sbyte offset = (sbyte)_bus.ReadMemory(ProgramCounter);
+        ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+        B = unchecked((byte)(B - 1));
+
+        if (B != 0)
+        {
+            ushort target = unchecked((ushort)(ProgramCounter + offset));
+            ProgramCounter = target;
+            _memoryPointer = target;
+            return 13;
+        }
+
+        return 8;
+    }
+
     private int ExecuteAddHl(byte opcode)
     {
         ushort ss = ((opcode >> 4) & 3) switch
@@ -808,6 +982,52 @@ public sealed class Z80(IZ80Bus bus)
         byte subOpcode = _bus.FetchOpcode(address);
         ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
         Refresh = (byte)((Refresh & 0x80) | ((Refresh + 1) & 0x7F));
+
+        if ((subOpcode & 0xCF) == 0x43)
+        {
+            byte low = _bus.ReadMemory(ProgramCounter);
+            ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+            byte high = _bus.ReadMemory(ProgramCounter);
+            ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+            ushort addr = (ushort)((high << 8) | low);
+            _memoryPointer = addr;
+
+            ushort val = ((subOpcode >> 4) & 3) switch
+            {
+                0 => BC,
+                1 => DE,
+                2 => HL,
+                3 => StackPointer,
+                _ => throw new InvalidOperationException()
+            };
+
+            _bus.WriteMemory(addr, (byte)(val & 0xFF));
+            _bus.WriteMemory(unchecked((ushort)(addr + 1)), (byte)(val >> 8));
+            return 20;
+        }
+
+        if ((subOpcode & 0xCF) == 0x4B)
+        {
+            byte low = _bus.ReadMemory(ProgramCounter);
+            ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+            byte high = _bus.ReadMemory(ProgramCounter);
+            ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+            ushort addr = (ushort)((high << 8) | low);
+            _memoryPointer = addr;
+
+            byte rLow = _bus.ReadMemory(addr);
+            byte rHigh = _bus.ReadMemory(unchecked((ushort)(addr + 1)));
+            ushort val = (ushort)((rHigh << 8) | rLow);
+
+            switch ((subOpcode >> 4) & 3)
+            {
+                case 0: BC = val; break;
+                case 1: DE = val; break;
+                case 2: HL = val; break;
+                case 3: StackPointer = val; break;
+            }
+            return 20;
+        }
 
         if ((subOpcode & 0xCF) == 0x4A)
         {
@@ -1063,6 +1283,37 @@ public sealed class Z80(IZ80Bus bus)
                 return 16;
             }
 
+            case 0x67: // RRD
+            {
+                byte mem = _bus.ReadMemory(HL);
+                byte oldA = A;
+                A = (byte)((A & 0xF0) | (mem & 0x0F));
+                byte newMem = (byte)(((oldA & 0x0F) << 4) | (mem >> 4));
+                _bus.WriteMemory(HL, newMem);
+
+                int sign = (A & 0x80) != 0 ? 0x80 : 0;
+                int zero = A == 0 ? 0x40 : 0;
+                int parity = global::System.Numerics.BitOperations.PopCount((uint)A) % 2 == 0 ? 0x04 : 0;
+                int undocumented = A & 0x28;
+                F = (byte)(sign | zero | undocumented | parity | (F & 0x01));
+                return 18;
+            }
+            case 0x6F: // RLD
+            {
+                byte mem = _bus.ReadMemory(HL);
+                byte oldA = A;
+                A = (byte)((A & 0xF0) | (mem >> 4));
+                byte newMem = (byte)(((mem & 0x0F) << 4) | (oldA & 0x0F));
+                _bus.WriteMemory(HL, newMem);
+
+                int sign = (A & 0x80) != 0 ? 0x80 : 0;
+                int zero = A == 0 ? 0x40 : 0;
+                int parity = global::System.Numerics.BitOperations.PopCount((uint)A) % 2 == 0 ? 0x04 : 0;
+                int undocumented = A & 0x28;
+                F = (byte)(sign | zero | undocumented | parity | (F & 0x01));
+                return 18;
+            }
+
             default:
                 throw new NotSupportedException($"Z80 ED opcode 0x{subOpcode:X2} at 0x{address:X4} is not implemented.");
         }
@@ -1106,6 +1357,16 @@ public sealed class Z80(IZ80Bus bus)
     private bool ExecuteIndexOpcode(byte opcode, bool useIY, int prefixCycles, out int cycles)
     {
         ushort indexVal = GetIndexRegister(useIY);
+
+        // ZiLOG UM0080: INC/DEC IX or IY leave all flags unchanged.
+        if (opcode is 0x23 or 0x2B)
+        {
+            ProgramCounter = unchecked((ushort)(ProgramCounter + 1));
+            Refresh = (byte)((Refresh & 0x80) | ((Refresh + 1) & 0x7F));
+            SetIndexRegister(useIY, unchecked((ushort)(indexVal + (opcode == 0x23 ? 1 : -1))));
+            cycles = prefixCycles + 6;
+            return true;
+        }
 
         if (opcode == 0xCB)
         {

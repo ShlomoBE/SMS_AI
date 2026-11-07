@@ -113,6 +113,10 @@ public sealed class VdpPorts
 
     private void IncrementAddress() => address = (address + 1) & 0x3fff;
 
+    public byte[] InternalVram => vram;
+    public byte[] InternalCram => cram;
+    public byte[] InternalRegisters => registers;
+
     public VdpPortSnapshot Inspect() => new(vram, cram, registers, address, code,
         secondControlByte, readBuffer, status, linePending);
 }

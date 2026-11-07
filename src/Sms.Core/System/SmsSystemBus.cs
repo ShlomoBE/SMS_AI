@@ -95,13 +95,12 @@ public sealed class SmsSystemBus : IZ80Bus
     {
         if (address < 0xC000)
         {
-            bool biosEnabled = (MemoryControl & 0x04) == 0;
-            bool cartEnabled = (MemoryControl & 0x08) == 0;
-
-            if (biosEnabled && Bios != null && address < Bios.Length)
-            {
-                return Bios[address];
-            }
+            // Charles MacDonald, IDocs/General.txt §4 (Port $3E Memory Control):
+            // D6 (0x40) = Cartridge slot disable (0 = enabled, 1 = disabled)
+            // D3 (0x08) = BIOS ROM disable (0 = enabled, 1 = disabled)
+            // Cartridge takes precedence if both cartridge and BIOS are enabled.
+            bool cartEnabled = (MemoryControl & 0x40) == 0;
+            bool biosEnabled = (MemoryControl & 0x08) == 0;
 
             if (cartEnabled && Mapper != null)
             {
@@ -109,6 +108,11 @@ public sealed class SmsSystemBus : IZ80Bus
                 {
                     return value;
                 }
+            }
+
+            if (biosEnabled && Bios != null && address < Bios.Length)
+            {
+                return Bios[address];
             }
 
             return 0xFF;
@@ -124,7 +128,7 @@ public sealed class SmsSystemBus : IZ80Bus
     {
         if (address < 0xC000)
         {
-            bool cartEnabled = (MemoryControl & 0x08) == 0;
+            bool cartEnabled = (MemoryControl & 0x40) == 0;
             if (cartEnabled && Mapper != null)
             {
                 Mapper.ObserveWrite(address, value);

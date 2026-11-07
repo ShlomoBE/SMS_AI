@@ -208,12 +208,12 @@ public sealed class Z80InterruptTests
     }
 
     [Fact]
-    public void AcceptNmi_WhenHalted_ExitsHalt_AdvancesPcPastHalt_PushesPcSavesIff_11TStates()
+    public void AcceptNmi_WhenHalted_ExitsHalt_PushesNextPcSavesIff_11TStates()
     {
         var bus = new TestBus();
         var cpu = new Z80(bus)
         {
-            ProgramCounter = 0x1000,
+            ProgramCounter = 0x1001,
             StackPointer = 0x2000,
             IsHalted = true,
             IFF1 = true,
@@ -355,12 +355,12 @@ public sealed class Z80InterruptTests
     }
 
     [Fact]
-    public void AcceptIrq_WhenHalted_ExitsHalt_AdvancesPcPastHalt_PushesPc_JumpsToVector_13TStates()
+    public void AcceptIrq_WhenHalted_ExitsHalt_PushesNextPc_JumpsToVector_13TStates()
     {
         var bus = new TestBus { InterruptVector = 0x00 };
         var cpu = new Z80(bus)
         {
-            ProgramCounter = 0x1000,
+            ProgramCounter = 0x1001,
             StackPointer = 0x2000,
             IsHalted = true,
             InterruptMode = 1,
@@ -383,6 +383,29 @@ public sealed class Z80InterruptTests
     #endregion
 
     #region Helper Bus Class
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void InterruptAfterExecutedHaltReturnsToNextInstruction(bool nmi)
+    {
+        var bus = new TestBus();
+        var cpu = new Z80(bus) { ProgramCounter = 0x1000, StackPointer = 0x2000, InterruptMode = 1, IFF1 = true };
+        bus.Memory[0x1000] = 0x76; // HALT
+        bus.Memory[0x1001] = 0x3E; // LD A,n
+        bus.Memory[0x1002] = 0x42;
+        bus.Memory[nmi ? 0x66 : 0x38] = 0xC9; // RET
+
+        Assert.Equal(4, cpu.Step());
+        Assert.Equal(0x1001, cpu.ProgramCounter);
+        Assert.Equal(4, cpu.Step());
+        if (nmi) cpu.AcceptNmi(); else cpu.AcceptIrq();
+        Assert.Equal(0x01, bus.Memory[0x1FFE]);
+        cpu.Step();
+        Assert.Equal(0x1001, cpu.ProgramCounter);
+        cpu.Step();
+        Assert.Equal(0x42, cpu.A);
+    }
 
     private sealed class TestBus : IZ80Bus
     {

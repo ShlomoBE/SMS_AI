@@ -64,7 +64,7 @@ public sealed class VdpSpriteEngine
         }
 
         bool leftColumnMask = (r0 & 0x20) != 0;
-        bool shiftLeft32 = (r0 & 0x08) != 0;
+        bool shiftLeft8 = (r0 & 0x08) != 0;
         bool is8x16 = (r1 & 0x02) != 0;
         bool isZoomed = (r1 & 0x01) != 0;
 
@@ -120,19 +120,20 @@ public sealed class VdpSpriteEngine
             int tileIndex;
             int rowWithinTile;
 
+            int tileBase = tileByte;
+            if ((r6 & 0x04) != 0)
+            {
+                tileBase += 256;
+            }
+
             if (is8x16)
             {
-                int tileBase = tileByte & 0xFE;
-                tileIndex = (patternRow < 8) ? tileBase : (tileBase | 1);
+                int basePattern = tileBase & ~1;
+                tileIndex = (patternRow < 8) ? basePattern : (basePattern | 1);
                 rowWithinTile = patternRow & 7;
             }
             else
             {
-                int tileBase = tileByte;
-                if ((r6 & 0x04) != 0)
-                {
-                    tileBase += 256;
-                }
                 tileIndex = tileBase;
                 rowWithinTile = patternRow;
             }
@@ -144,9 +145,9 @@ public sealed class VdpSpriteEngine
             byte p3 = vram[(rowAddr + 3) & 0x3FFF];
 
             int screenXBase = xByte;
-            if (shiftLeft32)
+            if (shiftLeft8)
             {
-                screenXBase -= 32;
+                screenXBase -= 8;
             }
 
             int spriteWidth = isZoomed ? 16 : 8;

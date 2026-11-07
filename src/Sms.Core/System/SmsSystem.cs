@@ -115,7 +115,7 @@ public sealed class SmsSystem
         byte[]? bios = null,
         VideoStandard videoStandard = VideoStandard.Ntsc,
         SmsAudioMode audioMode = SmsAudioMode.Auto)
-        : this(new SegaMapper(romBytes, mapperProfile), bios, videoStandard, audioMode)
+        : this(new SegaMapper(romBytes, mapperProfile, mapperProfile == SegaMapperProfile.Sega3155235Sram8KiB ? new byte[8192] : ReadOnlySpan<byte>.Empty), bios, videoStandard, audioMode)
     {
     }
 
@@ -197,16 +197,15 @@ public sealed class SmsSystem
     public void StepFrame(float[]? audioBuffer = null, int sampleRate = 44100)
     {
         int totalScanlines = VideoStandard == VideoStandard.Ntsc ? 262 : 313;
-        const int tStatesPerLine = 76; // 228 master ticks / 3
+        const int tStatesPerLine = 228; // NTSC/PAL standard: 228 CPU T-states per scanline (684 master ticks / 3)
 
         for (int line = 0; line < totalScanlines; line++)
         {
             Bus.CurrentScanline = line;
 
-            VdpPortSnapshot snapshot = Vdp.Inspect();
-            byte[] registers = snapshot.Registers.ToArray();
-            byte[] vram = snapshot.Vram.ToArray();
-            byte[] cram = snapshot.Cram.ToArray();
+            byte[] registers = Vdp.InternalRegisters;
+            byte[] vram = Vdp.InternalVram;
+            byte[] cram = Vdp.InternalCram;
 
             UpdateVdpScanlineEvents(line, registers);
 
@@ -238,7 +237,7 @@ public sealed class SmsSystem
 
         if (audioBuffer != null && audioBuffer.Length > 0)
         {
-            ulong frameMasterTicks = (ulong)totalScanlines * 228;
+            ulong frameMasterTicks = (ulong)totalScanlines * 684;
             AudioMixer.GeneratePcmSamples(audioBuffer, audioBuffer.Length, sampleRate, frameMasterTicks);
         }
     }
@@ -267,22 +266,34 @@ public sealed class SmsSystem
         Controllers.SetResetState(pressed);
     }
 
+    private static readonly uint[] CramLut = BuildCramLut();
+
+    private static uint[] BuildCramLut()
+    {
+        uint[] lut = new uint[64];
+        for (int i = 0; i < 64; i++)
+        {
+            byte r = (byte)((i & 0x03) * 85);
+            byte g = (byte)(((i >> 2) & 0x03) * 85);
+            byte b = (byte)(((i >> 4) & 0x03) * 85);
+            lut[i] = 0xFF000000u | ((uint)r << 16) | ((uint)g << 8) | b;
+        }
+        return lut;
+    }
+
     /// <summary>
     /// Converts a 6-bit SMS CRAM color byte (00BBGGRR) to a 32-bit ARGB (0xFFRRGGBB) pixel.
     /// </summary>
     public static uint ConvertCramToArgb(byte cramColor)
     {
-        byte r = (byte)((cramColor & 0x03) * 85);
-        byte g = (byte)(((cramColor >> 2) & 0x03) * 85);
-        byte b = (byte)(((cramColor >> 4) & 0x03) * 85);
-        return 0xFF000000u | ((uint)r << 16) | ((uint)g << 8) | b;
+        return CramLut[cramColor & 63];
     }
 
     private void UpdateVdpScanlineEvents(int line, byte[] registers)
     {
         byte r10 = registers.Length > 10 ? registers[10] : (byte)0;
 
-        if (line <= DisplayHeight)
+        if (line < DisplayHeight)
         {
             if (_lineCounter == 0)
             {

@@ -337,20 +337,20 @@ public sealed class VdpSpriteEngineTests
     }
 
     [Fact]
-    public void ShiftSpritesLeft32Pixels_WhenR0Bit3Set()
+    public void ShiftSpritesLeft8Pixels_WhenR0Bit3Set()
     {
         var (vram, cram, registers, bgLine, finalLine) = CreateFixture();
 
         SetTileRowPattern(vram, 1, 0, 0xFF, 0x00, 0x00, 0x00); // Color 1
 
-        // Sprite at SAT X = 40. When R0 bit 3 is set, screen X = 40 - 32 = 8.
+        // Sprite at SAT X = 40. When R0 bit 3 is set (Early Clock), screen X = 40 - 8 = 32.
         SetSprite(vram, SatBase, 0, 10, 40, 1);
 
         registers[0] = 0x08; // R0 bit 3 set
         VdpSpriteEngine.ProcessScanline(vram, cram, registers, 11, bgLine, finalLine, out bool overflow, out bool collision);
 
-        Assert.Equal(1, finalLine[8].ColorIndex);
-        Assert.Equal(1, finalLine[15].ColorIndex);
+        Assert.Equal(1, finalLine[32].ColorIndex);
+        Assert.Equal(1, finalLine[39].ColorIndex);
         Assert.Equal(0, finalLine[40].ColorIndex);
     }
 

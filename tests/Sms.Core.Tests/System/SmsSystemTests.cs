@@ -65,23 +65,23 @@ public class SmsSystemTests
         byte[] rom = CreateDummyRom(2, 0xBB);
         var sys = new SmsSystem(romBytes: rom, mapperProfile: SegaMapperProfile.Sega3155235RomOnly, bios: bios);
 
-        // Port $3E = 0x00 -> BIOS enabled (bit 2=0), Cartridge enabled (bit 3=0)
+        // Port $3E = 0x00 -> Cartridge enabled (bit 6=0), BIOS enabled (bit 3=0). Cartridge has precedence.
         sys.Bus.MemoryControl = 0x00;
-        Assert.Equal(0xAA, sys.Bus.ReadMemory(0x0000)); // < bios.Length -> BIOS
-        Assert.Equal(0xBB, sys.Bus.ReadMemory(0x5000)); // >= bios.Length -> Cartridge
+        Assert.Equal(0xBB, sys.Bus.ReadMemory(0x0000)); // Cartridge precedence
+        Assert.Equal(0xBB, sys.Bus.ReadMemory(0x5000)); // Cartridge precedence
 
-        // Port $3E = 0x04 -> BIOS disabled (bit 2=1), Cartridge enabled (bit 3=0)
-        sys.Bus.MemoryControl = 0x04;
+        // Port $3E = 0x40 -> Cartridge disabled (bit 6=1), BIOS enabled (bit 3=0)
+        sys.Bus.MemoryControl = 0x40;
+        Assert.Equal(0xAA, sys.Bus.ReadMemory(0x0000)); // < bios.Length -> BIOS
+        Assert.Equal(0xFF, sys.Bus.ReadMemory(0x5000)); // >= bios.Length -> Unmapped 0xFF
+
+        // Port $3E = 0x08 -> Cartridge enabled (bit 6=0), BIOS disabled (bit 3=1)
+        sys.Bus.MemoryControl = 0x08;
         Assert.Equal(0xBB, sys.Bus.ReadMemory(0x0000)); // Cartridge
         Assert.Equal(0xBB, sys.Bus.ReadMemory(0x5000)); // Cartridge
 
-        // Port $3E = 0x08 -> BIOS enabled (bit 2=0), Cartridge disabled (bit 3=1)
-        sys.Bus.MemoryControl = 0x08;
-        Assert.Equal(0xAA, sys.Bus.ReadMemory(0x0000)); // BIOS
-        Assert.Equal(0xFF, sys.Bus.ReadMemory(0x5000)); // Cartridge disabled -> 0xFF
-
-        // Port $3E = 0x0C -> BIOS disabled (bit 2=1), Cartridge disabled (bit 3=1)
-        sys.Bus.MemoryControl = 0x0C;
+        // Port $3E = 0x48 -> Cartridge disabled (bit 6=1), BIOS disabled (bit 3=1)
+        sys.Bus.MemoryControl = 0x48;
         Assert.Equal(0xFF, sys.Bus.ReadMemory(0x0000)); // Unmapped -> 0xFF
         Assert.Equal(0xFF, sys.Bus.ReadMemory(0x5000)); // Unmapped -> 0xFF
     }
@@ -179,11 +179,11 @@ public class SmsSystemTests
     {
         var sysNtsc = new SmsSystem(CreateDummyRom(), videoStandard: VideoStandard.Ntsc);
         sysNtsc.StepFrame();
-        Assert.Equal(262u * 228u, sysNtsc.Scheduler.MasterTicks);
+        Assert.Equal(262u * 684u, sysNtsc.Scheduler.MasterTicks);
 
         var sysPal = new SmsSystem(CreateDummyRom(), videoStandard: VideoStandard.Pal);
         sysPal.StepFrame();
-        Assert.Equal(313u * 228u, sysPal.Scheduler.MasterTicks);
+        Assert.Equal(313u * 684u, sysPal.Scheduler.MasterTicks);
     }
 
     [Fact]

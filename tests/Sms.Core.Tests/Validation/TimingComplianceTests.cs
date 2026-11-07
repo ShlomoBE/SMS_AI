@@ -22,8 +22,8 @@ public sealed class TimingComplianceTests
         var sys = new SmsSystem(CreateDummyRom(), videoStandard: VideoStandard.Ntsc);
         sys.StepFrame();
 
-        // NTSC = 262 lines * 228 master ticks/line = 59,736 master ticks per frame (76 CPU T-states/line)
-        ulong expectedMasterTicks = 262u * 228u;
+        // NTSC = 262 lines * 684 master ticks/line = 179,208 master ticks per frame (228 CPU T-states/line)
+        ulong expectedMasterTicks = 262u * 684u;
         Assert.Equal(expectedMasterTicks, sys.Scheduler.MasterTicks);
     }
 

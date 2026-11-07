@@ -13,7 +13,7 @@ public sealed class AudioPlayer : IDisposable
     private const int Channels = 1;
     private const int BitsPerSample = 16;
     private const int BufferCount = 4;
-    private const int BufferSize = 2940; // ~66ms per buffer (approx 4 frames at 60fps)
+    private const int BufferSize = 1470; // Exact 1 frame at 44.1 kHz 60 FPS (735 16-bit mono samples)
 
     private readonly bool _isWindows;
     private readonly IntPtr _hWaveOut;
