@@ -143,18 +143,19 @@ public sealed class SmsSystemBus : IZ80Bus
     /// <inheritdoc/>
     public byte ReadIo(ushort port)
     {
-        byte portLower = (byte)(port & 0xFF);
-        return portLower switch
+        byte p = (byte)(port & 0xFF);
+
+        // YM2413 FM Port overrides
+        if (p == 0xF2) return AudioMixer.Fm.AudioControl;
+        if (p is 0xF0 or 0xF1) return 0xFF;
+
+        // Charles MacDonald, IDocs/General.txt §4 (I/O Port Map)
+        return (p & 0xC0) switch
         {
-            0x3E => MemoryControl,
-            0x3F => Controllers.ReadPort(0x3F),
-            0x7E => GetVCounter(),
-            0x7F => CurrentHCounter,
-            0xBE => Vdp.ReadData(),
-            0xBF or 0xBD => Vdp.ReadStatus(),
-            0xDC or 0xC0 => Controllers.ReadPort(0xDC),
-            0xDD or 0xC1 => Controllers.ReadPort(0xDD),
-            0xF2 => AudioMixer.Fm.AudioControl,
+            0x00 => (p & 1) == 0 ? MemoryControl : Controllers.ReadPort(0x3F),
+            0x40 => (p & 1) == 0 ? GetVCounter() : CurrentHCounter,
+            0x80 => (p & 1) == 0 ? Vdp.ReadData() : Vdp.ReadStatus(),
+            0xC0 => (p & 1) == 0 ? Controllers.ReadPort(0xDC) : Controllers.ReadPort(0xDD),
             _ => 0xFF
         };
     }
@@ -162,34 +163,29 @@ public sealed class SmsSystemBus : IZ80Bus
     /// <inheritdoc/>
     public void WriteIo(ushort port, byte value)
     {
-        byte portLower = (byte)(port & 0xFF);
-        switch (portLower)
+        byte p = (byte)(port & 0xFF);
+
+        // YM2413 FM Port overrides
+        if (p == 0xF0) { AudioMixer.WritePortF0(value); return; }
+        if (p == 0xF1) { AudioMixer.WritePortF1(value); return; }
+        if (p == 0xF2) { AudioMixer.WritePortF2(value); return; }
+
+        // Charles MacDonald, IDocs/General.txt §4 (I/O Port Map)
+        switch (p & 0xC0)
         {
-            case 0x3E:
-                MemoryControl = value;
+            case 0x00:
+                if ((p & 1) == 0) MemoryControl = value;
+                else Controllers.WritePort(0x3F, value);
                 break;
-            case 0x3F:
-                Controllers.WritePort(0x3F, value);
-                break;
-            case 0x7E:
-            case 0x7F:
+            case 0x40:
                 AudioMixer.WritePort7F(value);
                 break;
-            case 0xBE:
-                Vdp.WriteData(value);
+            case 0x80:
+                if ((p & 1) == 0) Vdp.WriteData(value);
+                else Vdp.WriteControl(value);
                 break;
-            case 0xBF:
-            case 0xBD:
-                Vdp.WriteControl(value);
-                break;
-            case 0xF0:
-                AudioMixer.WritePortF0(value);
-                break;
-            case 0xF1:
-                AudioMixer.WritePortF1(value);
-                break;
-            case 0xF2:
-                AudioMixer.WritePortF2(value);
+            case 0xC0:
+                // Writes to C0-FF are unmapped / ignored on SMS
                 break;
         }
     }

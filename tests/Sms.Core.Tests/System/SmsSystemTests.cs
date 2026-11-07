@@ -171,7 +171,7 @@ public class SmsSystemTests
         Assert.Equal(0x01, sys.Bus.ReadIo(0xF2));
 
         // Default unmapped port
-        Assert.Equal(0xFF, sys.Bus.ReadIo(0x99));
+        Assert.Equal(0xFF, sys.Bus.ReadIo(0xF0));
     }
 
     [Fact]
