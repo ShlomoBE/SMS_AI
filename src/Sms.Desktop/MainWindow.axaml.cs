@@ -22,7 +22,7 @@ namespace Sms.Desktop;
 
 public partial class MainWindow : Window
 {
-    public const string AppVersion = "v1.9.0";
+    public const string AppVersion = "v2.0.0";
 
     [DllImport("winmm.dll")]
     private static extern int timeBeginPeriod(uint uPeriod);
