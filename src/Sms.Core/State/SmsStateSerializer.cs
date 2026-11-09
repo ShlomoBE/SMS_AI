@@ -1,6 +1,9 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Text.Json;
+using Sms.Core.Fm;
+using Sms.Core.Cartridge;
 using Sms.Core.Audio;
 using Sms.Core.System;
 
@@ -8,13 +11,14 @@ namespace Sms.Core.State;
 
 /// <summary>
 /// Binary Save State Engine &amp; Cartridge SRAM (.sav) Persistence Serializer for Sega Master System.
-/// Header: Magic "SMSSTATE" (8 bytes ASCII), Version = 1 (uint32).
+/// Header: Magic "SMSSTATE" (8 bytes ASCII), Version = 2 (uint32).
 /// Supports transactional state restoration and standalone SRAM persistence.
 /// </summary>
 public static class SmsStateSerializer
 {
     private static readonly byte[] MagicHeader = "SMSSTATE"u8.ToArray();
-    public const uint CurrentVersion = 1;
+    public const uint CurrentVersion = 2;
+    private const int MaxStateBytes = 1024 * 1024;
 
     /// <summary>
     /// Captures complete emulator state into a versioned binary byte array.
@@ -51,6 +55,12 @@ public static class SmsStateSerializer
             return false;
         }
 
+        if (stateData.Length > MaxStateBytes)
+        {
+            errorMessage = "Save state exceeds the maximum supported size.";
+            return false;
+        }
+
         try
         {
             using var ms = new MemoryStream(stateData.ToArray());
@@ -71,12 +81,26 @@ public static class SmsStateSerializer
             }
 
             var state = DeserializeState(reader, version);
+            if (ms.Position != ms.Length)
+            {
+                errorMessage = "Unexpected trailing save state data.";
+                return false;
+            }
             if (!state.Validate(system, out errorMessage))
             {
                 return false;
             }
 
-            state.ApplyTo(system);
+            var previous = SmsSaveState.FromSystem(system);
+            try
+            {
+                state.ApplyTo(system);
+            }
+            catch
+            {
+                previous.ApplyTo(system);
+                throw;
+            }
             return true;
         }
         catch (Exception ex)
@@ -117,7 +141,10 @@ public static class SmsStateSerializer
             throw new FileNotFoundException("Save state file not found.", filePath);
         }
 
-        byte[] data = File.ReadAllBytes(filePath);
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > MaxStateBytes) throw new InvalidDataException("Save state exceeds the maximum supported size.");
+        byte[] data = new byte[(int)stream.Length];
+        stream.ReadExactly(data);
         if (!TryRestoreState(system, data, out string? errorMessage))
         {
             throw new InvalidOperationException($"Failed to restore save state from file: {errorMessage}");
@@ -164,11 +191,13 @@ public static class SmsStateSerializer
             throw new FileNotFoundException("SRAM save file not found.", sramFilePath);
         }
 
-        byte[] bytes = File.ReadAllBytes(sramFilePath);
-        if (bytes.Length != system.Mapper.SramSize)
+        using var stream = new FileStream(sramFilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length != system.Mapper.SramSize)
         {
-            throw new ArgumentException($"SRAM file size ({bytes.Length} bytes) does not match required cartridge SRAM size ({system.Mapper.SramSize} bytes).");
+            throw new ArgumentException($"SRAM file size ({stream.Length} bytes) does not match required cartridge SRAM size ({system.Mapper.SramSize} bytes).");
         }
+        byte[] bytes = new byte[system.Mapper.SramSize];
+        stream.ReadExactly(bytes);
 
         system.Mapper.ImportSram(bytes);
     }
@@ -303,7 +332,6 @@ public static class SmsStateSerializer
         // Bus
         w.Write(state.BusMemoryControl);
         w.Write((byte)state.BusVideoStandard);
-        w.Write((byte)state.BusAudioMode);
         w.Write(state.BusCurrentScanline);
         w.Write(state.BusCurrentHCounter);
 
@@ -316,6 +344,14 @@ public static class SmsStateSerializer
         w.Write(state.PauseNmiPending);
         w.Write(state.Joypad1ThInput);
         w.Write(state.Joypad2ThInput);
+        w.Write((byte)state.RomHash.Length);
+        w.Write(state.RomHash);
+        w.Write((byte)state.MapperProfile);
+        w.Write((byte)state.BiosHash.Length);
+        w.Write(state.BiosHash);
+        byte[] fmSnapshot = JsonSerializer.SerializeToUtf8Bytes(state.FmSnapshot);
+        w.Write(fmSnapshot.Length);
+        w.Write(fmSnapshot);
     }
 
     private static SmsSaveState DeserializeState(BinaryReader r, uint version)
@@ -355,6 +391,7 @@ public static class SmsStateSerializer
 
         // RAM
         uint ramLen = r.ReadUInt32();
+        if (ramLen != SmsSystemBus.RamSize) throw new InvalidDataException("Invalid RAM length.");
         state.Ram = r.ReadBytes((int)ramLen);
 
         // Mapper
@@ -364,14 +401,18 @@ public static class SmsStateSerializer
         state.MapperSlot2 = r.ReadByte();
         state.MapperRamControl = r.ReadByte();
         uint sramLen = r.ReadUInt32();
+        if (sramLen != 0 && sramLen != SegaMapper.Sram8KiBSize) throw new InvalidDataException("Invalid SRAM length.");
         state.MapperSram = sramLen > 0 ? r.ReadBytes((int)sramLen) : Array.Empty<byte>();
 
         // VDP
         uint vramLen = r.ReadUInt32();
+        if (vramLen != 0x4000) throw new InvalidDataException("Invalid VRAM length.");
         state.VdpVram = r.ReadBytes((int)vramLen);
         uint cramLen = r.ReadUInt32();
+        if (cramLen != 32) throw new InvalidDataException("Invalid CRAM length.");
         state.VdpCram = r.ReadBytes((int)cramLen);
         uint regsLen = r.ReadUInt32();
+        if (regsLen != 11) throw new InvalidDataException("Invalid VDP register length.");
         state.VdpRegisters = r.ReadBytes((int)regsLen);
         state.VdpAddress = r.ReadInt32();
         state.VdpCode = r.ReadInt32();
@@ -397,8 +438,10 @@ public static class SmsStateSerializer
         state.FmLatchedAddress = r.ReadByte();
         state.FmAudioControl = r.ReadByte();
         uint fmRegsLen = r.ReadUInt32();
+        if (fmRegsLen != 256) throw new InvalidDataException("Invalid FM register length.");
         state.FmRegisters = r.ReadBytes((int)fmRegsLen);
         uint fmPatchLen = r.ReadUInt32();
+        if (fmPatchLen != 8) throw new InvalidDataException("Invalid FM patch length.");
         state.FmCustomPatch = r.ReadBytes((int)fmPatchLen);
         state.FmRhythmControl = r.ReadByte();
         for (int i = 0; i < 9; i++) state.FmFNumbers[i] = r.ReadUInt16();
@@ -416,6 +459,7 @@ public static class SmsStateSerializer
         state.FmNoiseLfsr = r.ReadUInt32();
 
         uint opCount = r.ReadUInt32();
+        if (opCount != 18) throw new InvalidDataException("Invalid FM operator count.");
         state.FmOperators = new FmOperatorState[opCount];
         for (int i = 0; i < opCount; i++)
         {
@@ -430,6 +474,7 @@ public static class SmsStateSerializer
         }
 
         uint rhythmOpCount = r.ReadUInt32();
+        if (rhythmOpCount != 6) throw new InvalidDataException("Invalid FM rhythm operator count.");
         state.FmRhythmOperators = new FmOperatorState[rhythmOpCount];
         for (int i = 0; i < rhythmOpCount; i++)
         {
@@ -452,7 +497,6 @@ public static class SmsStateSerializer
         // Bus
         state.BusMemoryControl = r.ReadByte();
         state.BusVideoStandard = (VideoStandard)r.ReadByte();
-        state.BusAudioMode = (SmsAudioMode)r.ReadByte();
         state.BusCurrentScanline = r.ReadInt32();
         state.BusCurrentHCounter = r.ReadByte();
 
@@ -465,6 +509,24 @@ public static class SmsStateSerializer
         state.PauseNmiPending = r.ReadBoolean();
         state.Joypad1ThInput = r.ReadBoolean();
         state.Joypad2ThInput = r.ReadBoolean();
+
+        int hashLength = r.ReadByte();
+        if (hashLength != (state.HasMapper ? 32 : 0)) throw new InvalidDataException("Invalid ROM identity length.");
+        state.RomHash = r.ReadBytes(hashLength);
+        if (state.RomHash.Length != hashLength) throw new EndOfStreamException("Truncated ROM identity.");
+        state.MapperProfile = (SegaMapperProfile)r.ReadByte();
+        int biosHashLength = r.ReadByte();
+        if (biosHashLength != 0 && biosHashLength != 32) throw new InvalidDataException("Invalid BIOS identity length.");
+        state.BiosHash = r.ReadBytes(biosHashLength);
+        if (state.BiosHash.Length != biosHashLength) throw new EndOfStreamException("Truncated BIOS identity.");
+
+        int fmSnapshotLength = r.ReadInt32();
+        if (fmSnapshotLength <= 0 || fmSnapshotLength > 65536)
+            throw new InvalidDataException("Invalid FM snapshot length.");
+        byte[] fmSnapshot = r.ReadBytes(fmSnapshotLength);
+        if (fmSnapshot.Length != fmSnapshotLength)
+            throw new EndOfStreamException("Truncated FM snapshot.");
+        state.FmSnapshot = JsonSerializer.Deserialize<YM2413Snapshot>(fmSnapshot);
 
         return state;
     }

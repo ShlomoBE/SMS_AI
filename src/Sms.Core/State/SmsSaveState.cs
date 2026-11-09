@@ -30,7 +30,11 @@ public struct FmOperatorState
 /// </summary>
 public sealed class SmsSaveState
 {
-    public uint Version { get; set; } = 1;
+    public uint Version { get; set; } = SmsStateSerializer.CurrentVersion;
+    public YM2413Snapshot? FmSnapshot { get; set; }
+    public byte[] RomHash { get; set; } = Array.Empty<byte>();
+    public byte[] BiosHash { get; set; } = Array.Empty<byte>();
+    public SegaMapperProfile MapperProfile { get; set; }
 
     // CPU State
     public ushort CpuPc { get; set; }
@@ -129,7 +133,6 @@ public sealed class SmsSaveState
     // System Bus State
     public byte BusMemoryControl { get; set; }
     public VideoStandard BusVideoStandard { get; set; }
-    public SmsAudioMode BusAudioMode { get; set; }
     public int BusCurrentScanline { get; set; }
     public byte BusCurrentHCounter { get; set; }
 
@@ -277,7 +280,11 @@ public sealed class SmsSaveState
         state.PsgDividerPhase = (int)(PsgDividerPhaseField?.GetValue(psg) ?? 0);
 
         // YM2413 FM
+        state.RomHash = system.Mapper?.ComputeRomHash() ?? Array.Empty<byte>();
+        state.BiosHash = system.Bus.Bios is { } bios ? global::System.Security.Cryptography.SHA256.HashData(bios) : Array.Empty<byte>();
+        if (system.Mapper != null) state.MapperProfile = system.Mapper.Profile;
         var fm = system.AudioMixer.Fm;
+        state.FmSnapshot = fm.CaptureSnapshot();
         state.FmLatchedAddress = fm.LatchedAddress;
         state.FmAudioControl = fm.AudioControl;
         state.FmRegisters = FmRegistersField?.GetValue(fm) is byte[] fmRegs ? (byte[])fmRegs.Clone() : new byte[256];
@@ -351,7 +358,6 @@ public sealed class SmsSaveState
         // Bus
         state.BusMemoryControl = system.Bus.MemoryControl;
         state.BusVideoStandard = system.VideoStandard;
-        state.BusAudioMode = system.AudioMode;
         state.BusCurrentScanline = system.Bus.CurrentScanline;
         state.BusCurrentHCounter = system.Bus.CurrentHCounter;
 
@@ -376,9 +382,36 @@ public sealed class SmsSaveState
     {
         errorMessage = null;
 
-        if (Version != 1)
+        if (Version != SmsStateSerializer.CurrentVersion)
         {
-            errorMessage = $"Unsupported save state version {Version}. Expected version 1.";
+            errorMessage = $"Unsupported save state version {Version}. Expected version {SmsStateSerializer.CurrentVersion}.";
+            return false;
+        }
+
+        if (!YM2413Fm.ValidateSnapshot(FmSnapshot))
+        {
+            errorMessage = "Invalid FM snapshot.";
+            return false;
+        }
+
+        if (HasMapper != (system.Mapper != null) || (HasMapper &&
+            (MapperProfile != system.Mapper!.Profile || !RomHash.AsSpan().SequenceEqual(system.Mapper.ComputeRomHash()))))
+        {
+            errorMessage = "Save state cartridge ROM or mapper profile does not match the loaded cartridge.";
+            return false;
+        }
+
+        byte[] currentBiosHash = system.Bus.Bios is { } bios ? global::System.Security.Cryptography.SHA256.HashData(bios) : Array.Empty<byte>();
+        if (BiosHash == null || !BiosHash.AsSpan().SequenceEqual(currentBiosHash))
+        {
+            errorMessage = "Save state BIOS does not match the loaded BIOS.";
+            return false;
+        }
+
+        if (SchedulerCpuPhase >= MasterScheduler.CpuDivisor || SchedulerVdpPhase >= MasterScheduler.VdpDivisor ||
+            SchedulerPsgPhase >= MasterScheduler.PsgDivisor)
+        {
+            errorMessage = "Invalid scheduler phase.";
             return false;
         }
 
@@ -406,21 +439,21 @@ public sealed class SmsSaveState
             return false;
         }
 
+        if ((uint)VdpAddress > 0x3fff || (uint)VdpCode > 3 || Array.Exists(VdpCram, value => value > 0x3f))
+        {
+            errorMessage = "Invalid VDP state.";
+            return false;
+        }
+
         if (!Enum.IsDefined(typeof(VideoStandard), BusVideoStandard))
         {
             errorMessage = $"Invalid VideoStandard value {(int)BusVideoStandard}.";
             return false;
         }
 
-        if (!Enum.IsDefined(typeof(SmsAudioMode), BusAudioMode))
-        {
-            errorMessage = $"Invalid AudioMode value {(int)BusAudioMode}.";
-            return false;
-        }
-
         if (system.Mapper != null && HasMapper)
         {
-            if (MapperSram.Length > 0 && system.Mapper.SramSize != MapperSram.Length)
+            if (system.Mapper.SramSize != MapperSram.Length)
             {
                 errorMessage = $"Cartridge SRAM size mismatch ({MapperSram.Length} vs expected {system.Mapper.SramSize}).";
                 return false;
@@ -575,7 +608,6 @@ public sealed class SmsSaveState
         // Bus
         system.Bus.MemoryControl = BusMemoryControl;
         system.VideoStandard = BusVideoStandard;
-        system.AudioMode = BusAudioMode;
         system.Bus.CurrentScanline = BusCurrentScanline;
         system.Bus.CurrentHCounter = BusCurrentHCounter;
 
@@ -589,5 +621,6 @@ public sealed class SmsSaveState
         PauseNmiPendingField?.SetValue(ctrl, PauseNmiPending);
         Joypad1ThInputField?.SetValue(ctrl, Joypad1ThInput);
         Joypad2ThInputField?.SetValue(ctrl, Joypad2ThInput);
+        system.AudioMixer.Fm.RestoreSnapshot(FmSnapshot!);
     }
 }

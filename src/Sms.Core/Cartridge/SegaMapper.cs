@@ -89,6 +89,7 @@ public sealed class SegaMapper
     }
 
     public int RomSize => rom.Length;
+    internal byte[] ComputeRomHash() => global::System.Security.Cryptography.SHA256.HashData(rom);
     public SegaMapperProfile Profile { get; }
     public int SramSize => sram.Length;
     public SegaMapperRegisters Registers => new(control, slot0, slot1, slot2);

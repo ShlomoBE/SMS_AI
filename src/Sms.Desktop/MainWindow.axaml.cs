@@ -22,7 +22,7 @@ namespace Sms.Desktop;
 
 public partial class MainWindow : Window
 {
-    public const string AppVersion = "v2.0.0";
+    public const string AppVersion = "v2.1.0";
 
     [DllImport("winmm.dll")]
     private static extern int timeBeginPeriod(uint uPeriod);
@@ -587,7 +587,6 @@ public partial class MainWindow : Window
                 }
                 Sms.Core.State.SmsStateSerializer.LoadStateFromFile(_sms, savePath);
                 _currentVideo = _sms.VideoStandard;
-                _currentAudio = _sms.AudioMode;
                 UpdateModeMenus();
                 StatusText.Text = "Quick State Loaded (F8)";
                 ShowToastNotification("Quick State Loaded (F8)", "📂");
@@ -672,7 +671,6 @@ public partial class MainWindow : Window
                 {
                     Sms.Core.State.SmsStateSerializer.LoadStateFromFile(_sms, files[0].Path.LocalPath);
                     _currentVideo = _sms.VideoStandard;
-                    _currentAudio = _sms.AudioMode;
                 }
                 UpdateModeMenus();
                 StatusText.Text = $"State loaded from: {files[0].Name}";

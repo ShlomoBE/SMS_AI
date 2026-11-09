@@ -11,6 +11,114 @@ namespace Sms.Core.Tests.State;
 
 public class SmsStateTests
 {
+    [Fact]
+    public void SaveStateWithTrailingDataIsRejected()
+    {
+        var system = new SmsSystem(CreateDummyRom());
+        var data = SmsStateSerializer.SaveState(system);
+        Array.Resize(ref data, data.Length + 1);
+        system.Ram[0] = 0x99;
+        Assert.False(SmsStateSerializer.TryRestoreState(system, data, out var error));
+        Assert.Contains("trailing", error);
+        Assert.Equal(0x99, system.Ram[0]);
+    }
+
+    [Fact]
+    public void DifferentBiosAndMissingSramAreRejected()
+    {
+        var rom = CreateDummyRom();
+        var source = new SmsSystem(rom, SegaMapperProfile.Sega3155235Sram8KiB, bios: new byte[] { 1 });
+        var target = new SmsSystem(rom, SegaMapperProfile.Sega3155235Sram8KiB, bios: new byte[] { 2 });
+        target.Ram[0] = 0x99;
+        Assert.False(SmsStateSerializer.TryRestoreState(target, SmsStateSerializer.SaveState(source), out var error));
+        Assert.Contains("BIOS", error);
+        Assert.Equal(0x99, target.Ram[0]);
+        var state = SmsSaveState.FromSystem(source);
+        state.MapperSram = Array.Empty<byte>();
+        Assert.False(state.Validate(source, out error));
+        Assert.Contains("SRAM", error);
+    }
+
+    [Fact]
+    public void OversizedStateIsRejectedBeforeMutation()
+    {
+        var system = new SmsSystem(CreateDummyRom());
+        system.Ram[0] = 0x99;
+        Assert.False(SmsStateSerializer.TryRestoreState(system, new byte[1024 * 1024 + 1], out var error));
+        Assert.Contains("maximum", error);
+        Assert.Equal(0x99, system.Ram[0]);
+    }
+
+    [Fact]
+    public void DifferentRomIsRejectedWithoutChangingMachine()
+    {
+        var source = new SmsSystem(CreateDummyRom(fillValue: 0));
+        var target = new SmsSystem(CreateDummyRom(fillValue: 1));
+        target.Ram[0] = 0x99;
+        target.Cpu.ProgramCounter = 0x1234;
+        var data = SmsStateSerializer.SaveState(source);
+        Assert.False(SmsStateSerializer.TryRestoreState(target, data, out var error));
+        Assert.Contains("ROM", error);
+        Assert.Equal(0x99, target.Ram[0]);
+        Assert.Equal(0x1234, target.Cpu.ProgramCounter);
+    }
+
+    [Fact]
+    public void InvalidSchedulerPhaseFailsValidationWithoutMutatingMachine()
+    {
+        var system = new SmsSystem(CreateDummyRom());
+        var state = SmsSaveState.FromSystem(system);
+        state.SchedulerCpuPhase = 3;
+        system.Ram[0] = 0x99;
+        Assert.False(state.Validate(system, out var error));
+        Assert.Contains("scheduler", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0x99, system.Ram[0]);
+    }
+
+    [Fact]
+    public void RestoreKeepsHostAudioPreferencesAndContinuesFmState()
+    {
+        var original = new SmsSystem(CreateDummyRom(), audioMode: SmsAudioMode.ForceFm);
+        var fm = original.AudioMixer.Fm;
+        fm.WriteAudioControl(1);
+        fm.WritePortAddress(0x30); fm.WritePortData(0x10);
+        fm.WritePortAddress(0x10); fm.WritePortData(0xAC);
+        fm.WritePortAddress(0x20); fm.WritePortData(0x19);
+        fm.GeneratePcmSamples(new float[500], 500, 44100, 121500);
+        fm.WritePortAddress(0x10); // Save between address and data writes.
+        byte[] data = SmsStateSerializer.SaveState(original);
+
+        var restored = new SmsSystem(CreateDummyRom(), audioMode: SmsAudioMode.ForcePsg);
+        restored.AudioMixer.PsgGain = 0.3f;
+        restored.AudioMixer.FmGain = 1.8f;
+        Assert.True(SmsStateSerializer.TryRestoreState(restored, data, out var error), error);
+        Assert.Equal(SmsAudioMode.ForcePsg, restored.AudioMode);
+        Assert.Equal(0.3f, restored.AudioMixer.PsgGain);
+        Assert.Equal(1.8f, restored.AudioMixer.FmGain);
+        fm.WritePortData(0x75);
+        restored.AudioMixer.Fm.WritePortData(0x75);
+        Assert.Equal(fm.ReadRegister(0x10), restored.AudioMixer.Fm.ReadRegister(0x10));
+        var expected = new float[1024];
+        var actual = new float[1024];
+        fm.GeneratePcmSamples(expected, expected.Length, 44100, 249344);
+        restored.AudioMixer.Fm.GeneratePcmSamples(actual, actual.Length, 44100, 249344);
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void LegacyVersionIsRejectedBeforeMachineChanges()
+    {
+        var system = new SmsSystem(CreateDummyRom());
+        var data = SmsStateSerializer.SaveState(system);
+        data[8] = 1; data[9] = 0; data[10] = 0; data[11] = 0;
+        system.Ram[0] = 0xA5;
+        system.AudioMode = SmsAudioMode.ForcePsg;
+        Assert.False(SmsStateSerializer.TryRestoreState(system, data, out string? error));
+        Assert.Contains("Unsupported save state version 1", error);
+        Assert.Equal(0xA5, system.Ram[0]);
+        Assert.Equal(SmsAudioMode.ForcePsg, system.AudioMode);
+    }
+
     private static byte[] CreateDummyRom(int bankCount = 2, byte fillValue = 0x00)
     {
         byte[] rom = new byte[bankCount * SegaMapper.BankSize];
@@ -109,6 +217,9 @@ public class SmsStateTests
         // Create target system with same mapper profile
         var targetMapper = new SegaMapper(rom, SegaMapperProfile.Sega3155235Sram8KiB, 0x00);
         var restored = new SmsSystem(targetMapper);
+        restored.AudioMode = SmsAudioMode.ForcePsg;
+        restored.AudioMixer.PsgGain = 0.4f;
+        restored.AudioMixer.FmGain = 1.7f;
 
         // Restore state
         bool success = SmsStateSerializer.TryRestoreState(restored, stateData, out string? errorMessage);
@@ -199,7 +310,9 @@ public class SmsStateTests
         // Assert Bus
         Assert.Equal(original.Bus.MemoryControl, restored.Bus.MemoryControl);
         Assert.Equal(original.VideoStandard, restored.VideoStandard);
-        Assert.Equal(original.AudioMode, restored.AudioMode);
+        Assert.Equal(SmsAudioMode.ForcePsg, restored.AudioMode);
+        Assert.Equal(0.4f, restored.AudioMixer.PsgGain);
+        Assert.Equal(1.7f, restored.AudioMixer.FmGain);
     }
 
     [Fact]

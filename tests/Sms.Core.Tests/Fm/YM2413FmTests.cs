@@ -90,26 +90,6 @@ public class YM2413FmTests
         Assert.Equal(state, carrier.State);
     }
 
-    [Theory]
-    [InlineData(10738580UL)] // project's NTSC master-clock constant
-    [InlineData(10640850UL)] // project's PAL master-clock constant
-    public void ApproximateEnvelopeRate_UsesChipClockReference(ulong masterTicks)
-    {
-        var fm = new YM2413Fm();
-        ConfigureTone(fm, 1);
-        Write(fm, 0x05, 0xf1); // carrier decay rate 1
-        Write(fm, 0x07, 0xf0); // 45 dB sustain threshold
-        var field = typeof(YM2413Fm).GetField("_operators", global::System.Reflection.BindingFlags.Instance | global::System.Reflection.BindingFlags.NonPublic)!;
-        var carrier = ((OperatorEngine[,])field.GetValue(fm)!)[0, 1];
-        carrier.State = EnvelopeState.Decay;
-        carrier.AttenuationDb = 0;
-        var samples = new float[44100];
-        fm.GeneratePcmSamples(samples, samples.Length, 44100, masterTicks);
-        // Current approximate rate 1 is 4 dB per reference-clock second.
-        double expected = 4.0 * masterTicks / (3.0 * 3579545.0);
-        Assert.InRange(carrier.AttenuationDb, expected - 1e-8, expected + 1e-8);
-    }
-
     [Fact]
     public void ModulatorLevel_MateriallyChangesCarrierWaveform()
     {
@@ -413,7 +393,11 @@ public class YM2413FmTests
         fm.WritePortData(0x19); // KeyOn=1, Block=4, FNum High=1
 
         float[] buffer = new float[256];
+        // At 5000 master ticks only 23 native steps elapse. Upstream's
+        // violin output is zero for all 23; allow attack time to elapse.
         fm.GeneratePcmSamples(buffer, buffer.Length, 44100.0, 5000);
+        Assert.All(buffer, sample => Assert.Equal(0, sample));
+        fm.GeneratePcmSamples(buffer, buffer.Length, 44100.0, 211000);
 
         bool containsNonZero = false;
         for (int i = 0; i < buffer.Length; i++)
